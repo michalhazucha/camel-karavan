@@ -14,15 +14,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import React, {useEffect, useState} from 'react';
-import {Badge, Button, capitalize, Content, Modal, ModalBody, ModalFooter, ModalHeader, TextInput, ToggleGroup, ToggleGroupItem} from '@patternfly/react-core';
-import {InnerScrollContainer, OuterScrollContainer, Table, Tbody, Td, Th, Thead, Tr} from "@patternfly/react-table";
-import {InfrastructureAPI} from "../../utils/InfrastructureAPI";
-import {useDesignerStore} from "../../DesignerStore";
-import {shallow} from "zustand/shallow";
-import {ExpressionEditor} from "../expression/ExpressionEditor";
-import './ConfigurationSelectorModal.css'
-import {useCodeStore} from "@features/project/designer/CodeStore";
+import { useCodeStore } from "@features/project/designer/CodeStore";
+import { Badge, Button, capitalize, Content, Modal, ModalBody, ModalFooter, ModalHeader, TextInput, ToggleGroup, ToggleGroupItem } from '@patternfly/react-core';
+import { InnerScrollContainer, OuterScrollContainer, Table, Tbody, Td, Th, Thead, Tr } from "@patternfly/react-table";
+import React, { useEffect, useState } from 'react';
+import { shallow } from "zustand/shallow";
+import { useDesignerStore } from "../../DesignerStore";
+import { InfrastructureAPI } from "../../utils/InfrastructureAPI";
+import { ExpressionEditor } from "../expression/ExpressionEditor";
+import './ConfigurationSelectorModal.css';
 
 const SYNTAX_EXAMPLES = [
     {key: 'property:', value: 'group.property', description: 'Application property'},
@@ -172,9 +172,11 @@ export function ConfigurationSelectorModal(props: Props) {
 
     function getServicesTable() {
         const services = InfrastructureAPI.services;
+        console.log("servicesTable",services)
         return (
             <OuterScrollContainer>
                 <InnerScrollContainer>
+                    <div><h1>THIS IS SERVICESTABLE</h1></div>
                     <Table variant='compact' isStickyHeader>
                         <Thead>
                             <Tr>
@@ -334,7 +336,7 @@ export function ConfigurationSelectorModal(props: Props) {
             <ModalHeader>
                 <div style={{display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8}}>
                     <div style={{flexGrow: 2, width: '100%'}}>
-                        <Content component={'h3'}>{'Set from'}</Content>
+                        <Content component={'h3'}>{'Set from to'}</Content>
                     </div>
                     <div style={{width: '300px'}}>
                         {tabIndex !== 'editor' && searchInput()}
@@ -351,7 +353,7 @@ export function ConfigurationSelectorModal(props: Props) {
                 {tabIndex === 'secret' && getSecretsTable()}
                 {tabIndex === 'services' && getServicesTable()}
                 {tabIndex === 'properties' && getPropertiesTable()}
-                {tabIndex === 'examples' && getExamplesTable()}
+                {tabIndex === 'examples' && getExamplesTable()}getServicesTable
                 {tabIndex === 'editor' && !hideEditor &&
                     <ExEditor dark={dark} customCode={customCode} name={name} onChange={setCode} title={title} dslLanguage={dslLanguage}/>}
             </ModalBody>
