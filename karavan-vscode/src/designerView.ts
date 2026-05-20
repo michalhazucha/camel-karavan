@@ -145,31 +145,19 @@ export class DesignerView {
                         case 'internalConsumerClick':
                             this.internalConsumerClick(panel, fullPath, message.uri, message.name, message.routeId, message.fileName);
                             break;
-                    
-            case 'listWorkspaceFiles':
-                console.log("Received listWorkspaceFiles command");
-                this.listWorkspaceFiles(panel);
-                break;
-            case 'readWorkspaceFile':
-                this.readWorkspaceFile(panel, message.relativePath);
-                break;
-            case 'save':
-                utils.save(message.relativePath, message.code);
-                break;
-            case 'saveCode':
-                utils.saveCode(message.name, message.yamlFullPath, message.yamFileName, message.code);
-                break;
-            case 'savePropertyPlaceholder':
-                utils.savePropertyPlaceholder(message.key, message.value);
-                break;
-            case 'getData':
-                this.sendData(panel, filename, relativePath, fullPath, message.reread === true, yaml, tab);
-                break;
-            case 'internalConsumerClick':
-                this.internalConsumerClick(panel, fullPath, message.uri, message.name, message.routeId, message.fileName);
-                break;
-        
-                        }
+                        case 'listWorkspaceFiles':
+                            this.listWorkspaceFiles(panel);
+                            break;
+                        case 'readWorkspaceFile':
+                            this.readWorkspaceFile(
+                                panel,
+                                message.relativePath,
+                                message.integrationDir,
+                                message.integrationFullPath,
+                                message.candidatePaths,
+                            );
+                            break;
+                    }
                 },
                 undefined,
                 this.context.subscriptions
@@ -299,15 +287,43 @@ export class DesignerView {
             });
     }
 
-    readWorkspaceFile(panel: WebviewPanel, relativePath: string) {
-        utils.readWorkspaceRelativeFile(relativePath)
-            .then(content => {
-                panel.webview.postMessage({ command: 'workspaceFileContent', relativePath, content });
-            })
-            .catch(error => {
-                console.error('Error reading workspace file:', error);
-                panel.webview.postMessage({ command: 'workspaceFileContent', relativePath, content: null, error: error.message });
-            });
+    readWorkspaceFile(
+        panel: WebviewPanel,
+        relativePath: string,
+        integrationDir?: string,
+        integrationFullPath?: string,
+        candidatePaths?: string[],
+    ) {
+        const candidates = utils.resolveWorkspaceFileReadCandidates(
+            relativePath,
+            integrationDir,
+            integrationFullPath,
+            candidatePaths,
+        );
+        console.log('[XKaravan] readWorkspaceFile', { relativePath, integrationDir, integrationFullPath, candidates });
+        const tryRead = async (index: number): Promise<void> => {
+            if (index >= candidates.length) {
+                const err = `File not found. Tried: ${candidates.join(', ')}`;
+                console.error('[XKaravan]', err);
+                panel.webview.postMessage({
+                    command: 'workspaceFileContent',
+                    relativePath: candidates[0] ?? relativePath,
+                    content: null,
+                    error: err,
+                });
+                return;
+            }
+            const candidate = candidates[index];
+            try {
+                const content = await utils.readWorkspaceRelativeFile(candidate);
+                console.log('[XKaravan] readWorkspaceFile ok', candidate, `(${content.length} chars)`);
+                panel.webview.postMessage({ command: 'workspaceFileContent', relativePath: candidate, content });
+            } catch (error) {
+                console.warn(`[XKaravan] Could not read workspace file at ${candidate}:`, error);
+                await tryRead(index + 1);
+            }
+        };
+        void tryRead(0);
     }
 
     async handleDynamicFileContent(code: string): Promise<string> {

@@ -58,7 +58,10 @@ const baseConfig = (webpackEnv) => {
                         },
                         {
                             test: /\.tsx?$/,
-                            exclude: /node_modules\/(?!@patternfly\/react-topology).*/,
+                            // Include @patternfly/react-topology sources when hoisted under .pnpm (pnpm layout)
+                            exclude: (modulePath) =>
+                                /node_modules/.test(modulePath) &&
+                                !/@patternfly[/\\]react-topology/.test(modulePath),
                             loader: require.resolve("ts-loader"),
                             options: {
                                 allowTsInNodeModules: true,

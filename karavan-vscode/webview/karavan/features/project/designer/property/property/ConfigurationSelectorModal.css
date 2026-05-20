@@ -17,3 +17,41 @@
 .configuration-selector-modal {
     height: 99%;
 }
+
+.configuration-selector-modal .pf-v6-c-modalBox__body,
+.configuration-selector-modal .pf-v6-c-modal__body {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    flex: 1 1 auto;
+}
+
+.configuration-selector-editor-pane {
+    flex: 1 1 auto;
+    min-height: 50vh;
+    height: 55vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.configuration-selector-editor-pane .expression-editor-root,
+.configuration-selector-editor-pane .container {
+    flex: 1 1 auto;
+    min-height: 100%;
+    height: 100%;
+}
+
+.configuration-selector-editor-pane .panel-top {
+    min-height: 100%;
+    height: 100%;
+}
+
+.configuration-selector-editor-pane .code-editor {
+    min-height: 100%;
+}
+
+.configuration-selector-editor-loading {
+    padding: 8px 12px;
+    color: var(--pf-v6-global--Color--200, #a3a3a3);
+    font-size: 13px;
+}

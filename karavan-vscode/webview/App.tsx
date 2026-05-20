@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 import { requestWorkspaceFiles } from "@/karavan/utils/workspaceApi";
+import { ensureWorkspaceMessageBridge } from "@/karavan/utils/workspaceMessageBridge";
 import { ProjectFunctionHook } from "@app/navigation/ProjectFunctionHook";
 import { DocumentationPage } from "@features/documentation/DocumentationPage";
 import { KaravanDesigner } from "@features/project/designer/KaravanDesigner";
@@ -57,8 +58,8 @@ interface State {
 class App extends React.Component<Props, State> {
 
   setFiles = useFilesStore.getState().setFiles;
-  setWorkspaceFiles=useWorkspaceStore.getState().setWorkspaceFiles
-    setWorkspaceFileContent=useWorkspaceStore.getState().setWorkspaceFileContent
+  setWorkspaceFiles = useWorkspaceStore.getState().setWorkspaceFiles;
+  setIntegrationContext = useWorkspaceStore.getState().setIntegrationContext;
 
   public state: State = {
     filename: '',
@@ -86,9 +87,10 @@ class App extends React.Component<Props, State> {
   private pendingWorkspaceFilesLog=false
 
   componentDidMount() {
+    ensureWorkspaceMessageBridge();
     window.addEventListener('message', this.onMessage, false);
     vscode.postMessage({ command: 'getData' });
-    requestWorkspaceFiles()
+    requestWorkspaceFiles();
     this.setState({ interval: setInterval(this.saveScheduledChanges, 2000) });
   }
 
@@ -141,6 +143,9 @@ class App extends React.Component<Props, State> {
         TemplateApi.saveJavaCodes(javaCodeMap, true);
         break;
       case 'open':
+        if (message.relativePath && message.fullPath) {
+          this.setIntegrationContext(message.relativePath, message.fullPath);
+        }
         if (this.state.filename === '' && this.state.key === '') {
           if (message.page !== "designer" && this.state.interval) clearInterval(this.state.interval);
           this.setState({
@@ -176,6 +181,9 @@ class App extends React.Component<Props, State> {
           console.log("workspace files:", message.files ?? []);
           this.pendingWorkspaceFilesLog = false;
         }
+        break;
+      case "workspaceFileContent":
+        // Handled by workspaceMessageBridge; keep case so App logging stays consistent.
         break;
     }
   };

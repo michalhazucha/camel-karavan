@@ -507,19 +507,47 @@ export async function listWorkspaceRelativeFiles(): Promise<string[]> {
     }
 }
 
+export const resolveWorkspaceFileReadCandidates = (
+    fileName: string,
+    integrationDir?: string,
+    integrationFullPath?: string,
+    extraCandidates?: string[],
+): string[] => {
+    const normalizedName = fileName.replace(/\\/g, '/').split('/').pop() ?? fileName;
+    const paths = new Set<string>();
+    if (integrationFullPath) {
+        paths.add(path.join(path.dirname(integrationFullPath), normalizedName).replace(/\\/g, '/'));
+    }
+    const dir = integrationDir?.replace(/\\/g, '/').replace(/\/$/, '') ?? '';
+    if (dir) {
+        paths.add(`${dir}/${normalizedName}`);
+    }
+    paths.add(normalizedName);
+    extraCandidates?.forEach((c) => paths.add(c.replace(/\\/g, '/')));
+    return Array.from(paths);
+};
+
 export async function readWorkspaceRelativeFile(relativePath: string): Promise<string> {
     const rootPath = getRoot();
     if (!rootPath) {
         throw new Error('No workspace folder is open.');
     }
 
-    const absolutePath = path.resolve(rootPath, relativePath);
-    if (!absolutePath.startsWith(rootPath)) {
-        throw new Error('Path is outside the workspace.');
+    const normalizedRoot = path.resolve(rootPath);
+    const absolutePath = path.isAbsolute(relativePath)
+        ? path.resolve(relativePath)
+        : path.resolve(normalizedRoot, relativePath);
+    const normalizedAbsolute = path.resolve(absolutePath);
+    if (
+        !normalizedAbsolute.startsWith(normalizedRoot + path.sep) &&
+        normalizedAbsolute !== normalizedRoot
+    ) {
+        throw new Error(`Path is outside the workspace: ${relativePath}`);
     }
 
     try {
-        return await readFile(absolutePath, 'utf8');
+        const bytes = await readFile(normalizedAbsolute);
+        return Buffer.from(bytes).toString('utf8');
     } catch (error) {
         console.error('Error reading workspace file:', error);
         throw error;

@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 import { useTheme } from "@app/theme/ThemeContext";
+import { ensureEditorString } from "@/karavan/utils/workspaceFileResolver";
 import Editor from "@monaco-editor/react";
 import React, { useEffect, useState } from 'react';
 import { ExpressionFunctions, ExpressionVariables } from "./ExpressionContextModel";
@@ -33,41 +34,45 @@ export function ExpressionEditor(props: Props) {
 
     const {isDark} = useTheme();
     const [customCode, setCustomCode] = useState<string | undefined>();
-    const [showVariables, setShowVariables] = useState<boolean>(false);
-    const [key, setKey] = useState<string>('');
 
     const {dslLanguage, onChange} = props;
 
     useEffect(() => {
-        setCustomCode(props.customCode?.toString());
+        setCustomCode(ensureEditorString(props.customCode));
     }, [props.customCode]);
-    
-    const language = dslLanguage?.[0] ?? 'java';
+
+    const language = dslLanguage?.[0] ?? 'plaintext';
+    const editorKey = `${language}-${props.name ?? 'editor'}`;
     const showVars = ExpressionVariables.findIndex(e => e.name === language) > - 1;
     const showFuncs = ExpressionFunctions.findIndex(e => e.name === language) > - 1;
     const show = showVars || showFuncs;
 
     return (
-        <div className='container'>
+        <div className='container expression-editor-root'>
             <div className='panel-top'>
                 <Editor
-                    key={key}
-                    height={"100%"}
+                    key={editorKey}
+                    height="100%"
                     width="100%"
                     defaultLanguage={language}
                     language={language}
                     theme={isDark ? 'vs-dark' : 'light'}
                     options={{
-                        lineNumbers: "off",
-                        folding: false,
-                        lineNumbersMinChars: 10,
+                        lineNumbers: "on",
+                        folding: true,
+                        lineNumbersMinChars: 3,
                         showUnused: false,
-                        fontSize: 12,
-                        minimap: {enabled: false}
+                        fontSize: 13,
+                        minimap: {enabled: false},
+                        wordWrap: "on",
                     }}
-                    value={customCode?.toString()}
+                    value={ensureEditorString(customCode)}
                     className={'code-editor'}
-                    onChange={(value, _) => setCustomCode(value)}
+                    onChange={(value) => {
+                        const next = value ?? '';
+                        setCustomCode(next);
+                        onChange(next);
+                    }}
                 />
             </div>
 

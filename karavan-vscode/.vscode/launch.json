@@ -16,10 +16,9 @@
             "request": "launch",
             "runtimeExecutable": "${execPath}",
             "args": ["--extensionDevelopmentPath=${workspaceFolder}"],
-            "outFiles": ["${workspaceFolder}/out/extension.js"],
-            "stopOnEntry": true,
+            "outFiles": ["${workspaceFolder}/dist/**/*.js"],
             "showReturnValue": true,
-            // "preLaunchTask": "npm: watch"
+            "preLaunchTask": "npm: watch"
         },
         {
             "name": "Run Web Extension in VS Code",

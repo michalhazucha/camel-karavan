@@ -18,8 +18,11 @@ import { ThemeProvider } from "@app/theme/ThemeContext";
 import "@patternfly/patternfly/patternfly.css";
 import * as React from "react";
 import { createRoot } from "react-dom/client";
+import { ensureWorkspaceMessageBridge } from "@/karavan/utils/workspaceMessageBridge";
 import App from "./App";
 import "./index.css";
+
+ensureWorkspaceMessageBridge();
 
 const container = document.getElementById('root');
 const root = createRoot(container!);
