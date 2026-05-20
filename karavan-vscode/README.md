@@ -85,6 +85,12 @@ Build-in catalogues:
     jbang -Dcamel.jbang.version=4.18.0 camel@apache/camel export --directory=export
     ```
 
+# Development (VS Code extension)
+
+Build: `pnpm install && pnpm run compile` (or `npm run watch` for F5 debugging).
+
+**Workspace file in Editor tab:** See [docs/HOWTO-workspace-editor.md](docs/HOWTO-workspace-editor.md) — how it works today and what to copy into GitHub Copilot Chat (VS Code) to extend nested paths, `file:`, and `{{placeholders}}`.
+
 # Issues
 
 If you find a new issue, please [create a new issue report in GitHub](https://github.com/apache/camel-karavan/issues)!
