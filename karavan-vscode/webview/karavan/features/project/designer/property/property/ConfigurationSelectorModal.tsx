@@ -14,12 +14,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+import { requestWorkspaceFile, requestWorkspaceFiles } from "@/karavan/utils/workspaceApi";
+import {
+    resolveBoundFileName,
+    resolveEditorContent,
+    resolveWorkspaceRelativePaths,
+} from "@/karavan/utils/workspaceFileResolver";
 import { useCodeStore } from "@features/project/designer/CodeStore";
 import { Badge, Button, capitalize, Content, Modal, ModalBody, ModalFooter, ModalHeader, TextInput, ToggleGroup, ToggleGroupItem } from '@patternfly/react-core';
 import { InnerScrollContainer, OuterScrollContainer, Table, Tbody, Td, Th, Thead, Tr } from "@patternfly/react-table";
 import React, { useEffect, useState } from 'react';
 import { shallow } from "zustand/shallow";
-import { useDesignerStore } from "../../DesignerStore";
+import { useWorkspaceStore } from "../../../../../stores/workspaceStore";
+import { useDesignerStore, useIntegrationStore } from "../../DesignerStore";
 import { InfrastructureAPI } from "../../utils/InfrastructureAPI";
 import { ExpressionEditor } from "../expression/ExpressionEditor";
 import './ConfigurationSelectorModal.css';
@@ -52,6 +59,9 @@ export function ConfigurationSelectorModal(props: Props) {
 
     const defaultTabs = InfrastructureAPI.infrastructure === 'kubernetes' ? ['properties', 'configMap', 'secret', 'services', 'examples', 'editor'] : ['properties', 'examples', 'services', 'editor'];
     const [propertyPlaceholders] = useDesignerStore((s) => [s.propertyPlaceholders], shallow)
+    const [integrationFiles] = useIntegrationStore((s) => [s.files], shallow)
+    const [workspaceFiles, workspaceFileContents] = useWorkspaceStore((s) => [s.files, s.fileContents], shallow)
+    const inputLanguage = dslLanguage?.[0];
     const [tabs, setTabs] = useState<string[]>([]);
     const [tabIndex, setTabIndex] = useState<string | number>();
     const [filter, setFilter] = useState<string>();
@@ -61,12 +71,30 @@ export function ConfigurationSelectorModal(props: Props) {
         const newTabs = hideEditor ? defaultTabs.filter(tab => tab !== 'editor') : defaultTabs;
         setTabs(newTabs)
         setTabIndex(newTabs.includes(defaultTabIndex) ? defaultTabIndex : newTabs[0])
-        setCode(customCode);
+        setCode(resolveEditorContent(customCode, integrationFiles, workspaceFiles, workspaceFileContents, inputLanguage));
     }, [])
 
     useEffect(() => {
-        setCode(customCode);
-    }, [customCode])
+        if (isOpen) {
+            requestWorkspaceFiles();
+        }
+    }, [isOpen])
+
+    useEffect(() => {
+        const fileName = resolveBoundFileName(customCode, inputLanguage);
+        console.log("fileName",fileName)
+        const resolvedCode = resolveEditorContent(customCode, integrationFiles, workspaceFiles, workspaceFileContents, inputLanguage);
+        setCode(resolvedCode);
+        if (!isOpen || !fileName) {
+            return;
+        }
+        const hasIntegrationContent = integrationFiles.find((file) => file.name === fileName)?.code !== undefined;
+        const workspacePaths = resolveWorkspaceRelativePaths(fileName, workspaceFiles);
+        const hasWorkspaceContent = workspacePaths.some((path) => workspaceFileContents[path] !== undefined);
+        if (!hasIntegrationContent && !hasWorkspaceContent) {
+            requestWorkspaceFile(workspacePaths[0] ?? fileName);
+        }
+    }, [customCode, integrationFiles, workspaceFiles, workspaceFileContents, isOpen, inputLanguage])
 
     function checkFilter(name: string): boolean {
         if (filter !== undefined && name) {
@@ -172,11 +200,9 @@ export function ConfigurationSelectorModal(props: Props) {
 
     function getServicesTable() {
         const services = InfrastructureAPI.services;
-        console.log("servicesTable",services)
         return (
             <OuterScrollContainer>
                 <InnerScrollContainer>
-                    <div><h1>THIS IS SERVICESTABLE</h1></div>
                     <Table variant='compact' isStickyHeader>
                         <Thead>
                             <Tr>
@@ -336,7 +362,7 @@ export function ConfigurationSelectorModal(props: Props) {
             <ModalHeader>
                 <div style={{display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8}}>
                     <div style={{flexGrow: 2, width: '100%'}}>
-                        <Content component={'h3'}>{'Set from to'}</Content>
+                        <Content component={'h3'}>{'Set from'}</Content>
                     </div>
                     <div style={{width: '300px'}}>
                         {tabIndex !== 'editor' && searchInput()}
@@ -353,9 +379,9 @@ export function ConfigurationSelectorModal(props: Props) {
                 {tabIndex === 'secret' && getSecretsTable()}
                 {tabIndex === 'services' && getServicesTable()}
                 {tabIndex === 'properties' && getPropertiesTable()}
-                {tabIndex === 'examples' && getExamplesTable()}getServicesTable
+                {tabIndex === 'examples' && getExamplesTable()}
                 {tabIndex === 'editor' && !hideEditor &&
-                    <ExEditor dark={dark} customCode={customCode} name={name} onChange={setCode} title={title} dslLanguage={dslLanguage}/>}
+                    <ExEditor resource dark={dark} customCode={code} name={name} onChange={setCode} title={title} dslLanguage={dslLanguage}/>}
             </ModalBody>
             <ModalFooter>
                 <Button key="save" variant="primary"

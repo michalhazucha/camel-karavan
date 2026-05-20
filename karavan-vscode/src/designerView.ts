@@ -14,13 +14,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import {commands, ExtensionContext, Uri, ViewColumn, WebviewPanel, WebviewPanelOnDidChangeViewStateEvent, window} from "vscode";
+import { CamelDefinitionYaml } from "@karavan-core/api/CamelDefinitionYaml";
+import { BeanFactoryDefinition } from "@karavan-core/model/CamelDefinition";
+import { Integration, KameletTypes, MetadataLabels } from "@karavan-core/model/IntegrationDefinition";
+import * as fs from "fs";
 import * as path from "path";
+import * as vscode from "vscode";
+import { commands, ExtensionContext, Uri, ViewColumn, WebviewPanel, WebviewPanelOnDidChangeViewStateEvent, window } from "vscode";
 import * as utils from "./utils";
-import {CamelDefinitionYaml} from "@karavan-core/api/CamelDefinitionYaml";
-import {Integration, KameletTypes, MetadataLabels} from "@karavan-core/model/IntegrationDefinition";
-import {getWebviewContent} from "./webviewContent";
-import {BeanFactoryDefinition} from "@karavan-core/model/CamelDefinition";
+import { getWebviewContent } from "./webviewContent";
 
 const KARAVAN_LOADED = "karavan:loaded";
 const KARAVAN_PANELS: Map<string, WebviewPanel> = new Map<string, WebviewPanel>();
@@ -143,7 +145,31 @@ export class DesignerView {
                         case 'internalConsumerClick':
                             this.internalConsumerClick(panel, fullPath, message.uri, message.name, message.routeId, message.fileName);
                             break;
-                    }
+                    
+            case 'listWorkspaceFiles':
+                console.log("Received listWorkspaceFiles command");
+                this.listWorkspaceFiles(panel);
+                break;
+            case 'readWorkspaceFile':
+                this.readWorkspaceFile(panel, message.relativePath);
+                break;
+            case 'save':
+                utils.save(message.relativePath, message.code);
+                break;
+            case 'saveCode':
+                utils.saveCode(message.name, message.yamlFullPath, message.yamFileName, message.code);
+                break;
+            case 'savePropertyPlaceholder':
+                utils.savePropertyPlaceholder(message.key, message.value);
+                break;
+            case 'getData':
+                this.sendData(panel, filename, relativePath, fullPath, message.reread === true, yaml, tab);
+                break;
+            case 'internalConsumerClick':
+                this.internalConsumerClick(panel, fullPath, message.uri, message.name, message.routeId, message.fileName);
+                break;
+        
+                        }
                 },
                 undefined,
                 this.context.subscriptions
@@ -258,5 +284,54 @@ export class DesignerView {
             }).catch(err => window.showErrorMessage("Error: " + err?.reason));
         }
 
+    }
+
+    listWorkspaceFiles(panel: WebviewPanel) {
+        console.log("listWorkspaceFiles called");
+        utils.listWorkspaceRelativeFiles()
+            .then(files => {
+                console.log("Files found:", files);
+                panel.webview.postMessage({ command: 'workspaceFiles', files });
+            })
+            .catch(error => {
+                console.error('Error listing workspace files:', error);
+                panel.webview.postMessage({ command: 'workspaceFiles', files: [] });
+            });
+    }
+
+    readWorkspaceFile(panel: WebviewPanel, relativePath: string) {
+        utils.readWorkspaceRelativeFile(relativePath)
+            .then(content => {
+                panel.webview.postMessage({ command: 'workspaceFileContent', relativePath, content });
+            })
+            .catch(error => {
+                console.error('Error reading workspace file:', error);
+                panel.webview.postMessage({ command: 'workspaceFileContent', relativePath, content: null, error: error.message });
+            });
+    }
+
+    async handleDynamicFileContent(code: string): Promise<string> {
+        try {
+            const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+            if (!workspaceFolder) {
+                vscode.window.showErrorMessage("No workspace folder is open.");
+                return code; // Return the original code if no workspace is open
+            }
+
+            // Resolve the full path of the file
+            const fullPath = path.join(workspaceFolder.uri.fsPath, code);
+
+            // Check if the path exists and is a file
+            if (fs.existsSync(fullPath) && fs.lstatSync(fullPath).isFile()) {
+                // Read the file content
+                const fileContent = fs.readFileSync(fullPath, "utf8");
+                return fileContent; // Return the file content
+            } else {
+                return code; // Return the original code if it's not a valid file
+            }
+        } catch (error) {
+            vscode.window.showErrorMessage(`Failed to handle file content: ${error.message}`);
+            return code; // Return the original code in case of an error
+        }
     }
 }

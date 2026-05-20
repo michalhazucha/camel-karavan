@@ -14,23 +14,24 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+import { requestWorkspaceFiles } from "@/karavan/utils/workspaceApi";
+import { ProjectFunctionHook } from "@app/navigation/ProjectFunctionHook";
+import { DocumentationPage } from "@features/documentation/DocumentationPage";
+import { KaravanDesigner } from "@features/project/designer/KaravanDesigner";
+import { EventBus } from "@features/project/designer/utils/EventBus";
+import { TopologyTab } from "@features/project/project-topology/TopologyTab";
+import { ProjectProvider } from "@features/project/ProjectContext";
+import { ComponentApi } from "@karavan-core/api/ComponentApi";
+import { KameletApi } from "@karavan-core/api/KameletApi";
+import { TemplateApi } from "@karavan-core/api/TemplateApi";
+import { BeanFactoryDefinition } from "@karavan-core/model/CamelDefinition";
+import { IntegrationFile } from "@karavan-core/model/IntegrationDefinition";
+import { ProjectFile } from "@models/ProjectModels";
+import { Bullseye, Button, Content, PageSection, Spinner } from "@patternfly/react-core";
+import { useFilesStore } from "@stores/ProjectStore";
+import { useWorkspaceStore } from "@stores/workspaceStore";
 import * as React from "react";
-import {Bullseye, Content, PageSection, Spinner} from "@patternfly/react-core";
 import vscode from "./vscode";
-import {KameletApi} from "@karavan-core/api/KameletApi";
-import {ComponentApi} from "@karavan-core/api/ComponentApi";
-import {TemplateApi} from "@karavan-core/api/TemplateApi";
-import {BeanFactoryDefinition} from "@karavan-core/model/CamelDefinition";
-import {IntegrationFile} from "@karavan-core/model/IntegrationDefinition";
-import {TopologyTab} from "@features/project/project-topology/TopologyTab";
-import {DocumentationPage} from "@features/documentation/DocumentationPage";
-import {KaravanDesigner} from "@features/project/designer/KaravanDesigner";
-import {EventBus} from "@features/project/designer/utils/EventBus";
-import {ProjectFunctionHook} from "@app/navigation/ProjectFunctionHook";
-import {ProjectProvider} from "@features/project/ProjectContext";
-import {ProjectFile} from "@models/ProjectModels";
-import {useFilesStore} from "@stores/ProjectStore";
-
 interface Props {
 }
 
@@ -56,6 +57,8 @@ interface State {
 class App extends React.Component<Props, State> {
 
   setFiles = useFilesStore.getState().setFiles;
+  setWorkspaceFiles=useWorkspaceStore.getState().setWorkspaceFiles
+    setWorkspaceFileContent=useWorkspaceStore.getState().setWorkspaceFileContent
 
   public state: State = {
     filename: '',
@@ -80,9 +83,12 @@ class App extends React.Component<Props, State> {
     }
   }
 
+  private pendingWorkspaceFilesLog=false
+
   componentDidMount() {
     window.addEventListener('message', this.onMessage, false);
     vscode.postMessage({ command: 'getData' });
+    requestWorkspaceFiles()
     this.setState({ interval: setInterval(this.saveScheduledChanges, 2000) });
   }
 
@@ -163,6 +169,14 @@ class App extends React.Component<Props, State> {
       case 'downloadImage':
         EventBus.sendCommand("downloadImage");
         break;
+      case "workspaceFiles":
+        console.log("Received workspace files:", message.files);
+        this.setWorkspaceFiles(message.files ?? []);
+        if (this.pendingWorkspaceFilesLog) {
+          console.log("workspace files:", message.files ?? []);
+          this.pendingWorkspaceFilesLog = false;
+        }
+        break;
     }
   };
 
@@ -191,10 +205,17 @@ class App extends React.Component<Props, State> {
     this.setState({ files: f });
   }
 
+  logWorkspaceFiles = () => {
+    console.log("log workspace files button clicked");
+    this.pendingWorkspaceFilesLog = true;
+    requestWorkspaceFiles();
+  }
+
   public render() {
     const { loadingMessages, filename, key, yaml, page, loaded, tab } = this.state;
     return (
       <div className="karavan">
+        <Button variant="secondary" onClick={this.logWorkspaceFiles}>Log workspace files</Button>
         {!loaded &&
           <PageSection className="loading-page">
             <Bullseye>

@@ -14,17 +14,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { ExtensionContext, Uri, window, workspace, commands, QuickPickItem, env} from 'vscode';
-import { DesignerView } from "./designerView";
-import { IntegrationView } from "./integrationView";
-import { HelpView } from "./helpView";
-import { selectFileName, inputFileName, OpenApiView, OpenApiItem } from "./openapiView";
 import * as path from "path";
-import * as jbang from "./jbang";
-import * as utils from "./utils";
+import { commands, env, ExtensionContext, QuickPickItem, Uri, window, workspace } from 'vscode';
+import { DesignerView } from "./designerView";
 import * as exec from "./exec";
+import { HelpView } from "./helpView";
+import { IntegrationView } from "./integrationView";
+import * as jbang from "./jbang";
+import { inputFileName, OpenApiItem, OpenApiView, selectFileName } from "./openapiView";
 import { TopologyView } from './topologyView';
-import vscode from "webview/vscode";
+import * as utils from "./utils";
 
 const KARAVAN_LOADED = "karavan:loaded";
 

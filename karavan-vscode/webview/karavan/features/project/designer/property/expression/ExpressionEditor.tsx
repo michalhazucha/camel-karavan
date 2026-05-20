@@ -14,11 +14,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import React, {useEffect, useState} from 'react';
+import { useTheme } from "@app/theme/ThemeContext";
 import Editor from "@monaco-editor/react";
-import './ExpressionEditor.css'
-import {ExpressionFunctions, ExpressionVariables} from "./ExpressionContextModel";
-import {useTheme} from "@app/theme/ThemeContext";
+import React, { useEffect, useState } from 'react';
+import { ExpressionFunctions, ExpressionVariables } from "./ExpressionContextModel";
+import './ExpressionEditor.css';
 
 interface Props {
     customCode: any,
@@ -39,10 +39,10 @@ export function ExpressionEditor(props: Props) {
     const {dslLanguage, onChange} = props;
 
     useEffect(() => {
-        setCustomCode(props.customCode)
-    },[]);
+        setCustomCode(props.customCode?.toString());
+    }, [props.customCode]);
     
-    const language = dslLanguage?.[0];
+    const language = dslLanguage?.[0] ?? 'java';
     const showVars = ExpressionVariables.findIndex(e => e.name === language) > - 1;
     const showFuncs = ExpressionFunctions.findIndex(e => e.name === language) > - 1;
     const show = showVars || showFuncs;
@@ -54,8 +54,8 @@ export function ExpressionEditor(props: Props) {
                     key={key}
                     height={"100%"}
                     width="100%"
-                    defaultLanguage={'java'}
-                    language={'java'}
+                    defaultLanguage={language}
+                    language={language}
                     theme={isDark ? 'vs-dark' : 'light'}
                     options={{
                         lineNumbers: "off",

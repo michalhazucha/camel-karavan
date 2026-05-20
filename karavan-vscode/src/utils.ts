@@ -14,12 +14,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+import { CamelDefinitionYaml } from "@karavan-core/api/CamelDefinitionYaml";
+import { TopologyUtils } from "@karavan-core/api/TopologyUtils";
+import { BeanFactoryDefinition } from "@karavan-core/model/CamelDefinition";
+import { Integration, KameletTypes } from "@karavan-core/model/IntegrationDefinition";
 import * as path from "path";
-import {ExtensionContext, FileType, Uri, window, workspace} from "vscode";
-import {CamelDefinitionYaml} from "@karavan-core/api/CamelDefinitionYaml";
-import {Integration, KameletTypes} from "@karavan-core/model/IntegrationDefinition";
-import {BeanFactoryDefinition} from "@karavan-core/model/CamelDefinition";
-import {TopologyUtils} from "@karavan-core/api/TopologyUtils";
+import { ExtensionContext, FileType, Uri, window, workspace } from "vscode";
 
 export function getRoot(): string | undefined {
     return (workspace.workspaceFolders && (workspace.workspaceFolders.length > 0))
@@ -483,4 +483,45 @@ export async function getFileWithInternalProducer(fullPath: string, routeId: str
         console.log((e as Error).message);
     }
     return undefined;
+}
+
+export const WORKSPACE_FILE_EXCLUDE = '{**/node_modules/**,**/.git/**,**/dist/**,**/target/**,**/.idea/**,**/.gradle/**}';
+
+export async function listWorkspaceRelativeFiles(): Promise<string[]> {
+    const rootPath = getRoot();
+    if (!rootPath) {
+        console.error("No workspace folder is open.");
+        return [];
+    }
+
+    try {
+        const files = await workspace.findFiles('**/*', WORKSPACE_FILE_EXCLUDE);
+        console.log("Files found in workspace:", files.map(file => file.fsPath));
+        return files
+            .map(file => path.relative(rootPath, file.fsPath))
+            .filter(relativePath => relativePath && !relativePath.startsWith('..'))
+            .sort();
+    } catch (error) {
+        console.error('Error listing workspace files:', error);
+        return [];
+    }
+}
+
+export async function readWorkspaceRelativeFile(relativePath: string): Promise<string> {
+    const rootPath = getRoot();
+    if (!rootPath) {
+        throw new Error('No workspace folder is open.');
+    }
+
+    const absolutePath = path.resolve(rootPath, relativePath);
+    if (!absolutePath.startsWith(rootPath)) {
+        throw new Error('Path is outside the workspace.');
+    }
+
+    try {
+        return await readFile(absolutePath, 'utf8');
+    } catch (error) {
+        console.error('Error reading workspace file:', error);
+        throw error;
+    }
 }
