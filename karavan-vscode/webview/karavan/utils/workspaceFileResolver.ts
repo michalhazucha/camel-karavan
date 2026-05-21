@@ -17,7 +17,34 @@
 
 const FILE_PREFIX = 'resource:';
 
-const RESOURCE_FILE_PATTERN = /\.(xslt?|xml|json|properties|sql|java|jsonata|groovy|js|yaml|yml)$/i;
+const NON_WORKSPACE_SCHEMES = new Set(['classpath', 'http', 'https', 'ref', 'bean', 'kamelet']);
+
+const RESOURCE_FILE_PATTERN = /\.(xslt?|xml|xsd|json|properties|sql|java|jsonata|groovy|js|yaml|yml)$/i;
+
+/** Strip Camel URI scheme (file:, resource:, …) and leading ./ for workspace-relative paths. */
+export const normalizeWorkspaceResourcePath = (raw: string): string => {
+    let path = raw.trim().replace(/\\/g, '/');
+    const schemeMatch = path.match(/^([a-z][a-z0-9+.-]*):/i);
+    if (schemeMatch) {
+        path = path.slice(schemeMatch[0].length);
+    }
+    while (path.startsWith('./')) {
+        path = path.slice(2);
+    }
+    while (path.startsWith('/')) {
+        path = path.slice(1);
+    }
+    return path;
+};
+
+export const isWorkspaceLoadableResource = (raw: string): boolean => {
+    const trimmed = raw.trim();
+    const schemeMatch = trimmed.match(/^([a-z][a-z0-9+.-]*):/i);
+    if (schemeMatch && NON_WORKSPACE_SCHEMES.has(schemeMatch[1].toLowerCase())) {
+        return false;
+    }
+    return !trimmed.includes('{{');
+};
 
 const SCALAR_OBJECT_KEYS = [
     'resourceUri',
@@ -129,17 +156,22 @@ export const integrationDirFromRelativePath = (integrationRelativePath?: string)
 
 export const resolveBoundFileName = (value: unknown, inputLanguage?: string): string | null => {
     const raw = coercePropertyScalar(value);
-    if (!raw || raw.includes('{{') || raw.includes('\n')) {
+    if (!raw || raw.includes('\n') || !isWorkspaceLoadableResource(raw)) {
         return null;
     }
-    if (raw.startsWith(FILE_PREFIX)) {
-        return raw.slice(FILE_PREFIX.length);
+    let path = raw;
+    if (path.startsWith(FILE_PREFIX)) {
+        path = path.slice(FILE_PREFIX.length);
     }
-    if (inputLanguage && raw.endsWith(`.${inputLanguage}`)) {
-        return raw;
+    path = normalizeWorkspaceResourcePath(path);
+    if (!path) {
+        return null;
     }
-    if (RESOURCE_FILE_PATTERN.test(raw)) {
-        return raw;
+    if (inputLanguage && path.endsWith(`.${inputLanguage}`)) {
+        return path;
+    }
+    if (RESOURCE_FILE_PATTERN.test(path)) {
+        return path;
     }
     return null;
 };
@@ -151,25 +183,53 @@ const joinRelative = (dir: string, fileName: string): string => {
     return d ? `${d}/${fileName}` : fileName;
 };
 
+const workspacePathMatches = (workspacePath: string, fileName: string): boolean => {
+    const p = workspacePath.replace(/\\/g, '/');
+    const f = fileName.replace(/\\/g, '/');
+    return p === f || p.endsWith(`/${f}`);
+};
+
 export const resolveWorkspaceRelativePaths = (
     fileName: string,
     workspaceFiles: string[],
     integrationDir?: string,
 ): string[] => {
+    const normalizedFile = normalizeWorkspaceResourcePath(fileName);
     const paths = new Set<string>();
     const dir = integrationDir?.replace(/\\/g, '/').replace(/\/$/, '') ?? '';
+    const hasDirPrefix = normalizedFile.includes('/');
+
     if (dir) {
-        paths.add(joinRelative(dir, fileName));
+        paths.add(joinRelative(dir, normalizedFile));
     }
-    paths.add(fileName);
+    paths.add(normalizedFile);
+
+    // Only fall back to basename / fuzzy workspace match for simple filenames (e.g. order-transform.xslt).
+    // Paths with a directory (e.g. xslt/test-variable.xsd) must resolve exactly — never load xsd/test-variable.xsd.
+    if (!hasDirPrefix) {
+        const baseName = normalizedFile.split('/').pop() ?? normalizedFile;
+        if (dir) {
+            paths.add(joinRelative(dir, baseName));
+        }
+        paths.add(baseName);
+        workspaceFiles
+            .filter((path) => workspacePathMatches(path, baseName))
+            .forEach((path) => paths.add(path.replace(/\\/g, '/')));
+    }
+
     workspaceFiles
-        .filter((path) => path === fileName || path.endsWith(`/${fileName}`) || path.endsWith(`\\${fileName}`))
-        .forEach((path) => paths.add(path));
+        .filter((path) => workspacePathMatches(path, normalizedFile))
+        .forEach((path) => paths.add(path.replace(/\\/g, '/')));
     return Array.from(paths).sort((a, b) => {
         const aInIntegration = dir && a.startsWith(dir + '/');
         const bInIntegration = dir && b.startsWith(dir + '/');
         if (aInIntegration !== bInIntegration) {
             return aInIntegration ? -1 : 1;
+        }
+        const aExact = a === normalizedFile || (dir && a === joinRelative(dir, normalizedFile));
+        const bExact = b === normalizedFile || (dir && b === joinRelative(dir, normalizedFile));
+        if (aExact !== bExact) {
+            return aExact ? -1 : 1;
         }
         return pathDepth(b) - pathDepth(a) || b.length - a.length;
     });
@@ -202,7 +262,15 @@ export const resolveEditorContent = (
     if (!fileName) {
         return ensureEditorString(customCode);
     }
-    const fromIntegration = integrationFiles.find((file) => file.name === fileName)?.code;
+    const normalized = normalizeWorkspaceResourcePath(fileName);
+    const strictPath = normalized.includes('/');
+    const fromIntegration = integrationFiles.find((file) => {
+        const n = file.name.replace(/\\/g, '/');
+        if (strictPath) {
+            return n === normalized || n === fileName;
+        }
+        return n === normalized || n === fileName || workspacePathMatches(n, normalized);
+    })?.code;
     if (typeof fromIntegration === 'string' && fromIntegration.length > 0 && fromIntegration !== '[object Object]') {
         return fromIntegration;
     }
@@ -219,7 +287,7 @@ export const editorLanguageFromFileName = (fileName: string): string => {
     if (lower.endsWith('.xsl') || lower.endsWith('.xslt')) {
         return 'xml';
     }
-    if (lower.endsWith('.xml')) {
+    if (lower.endsWith('.xml') || lower.endsWith('.xsd')) {
         return 'xml';
     }
     if (lower.endsWith('.json')) {

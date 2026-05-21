@@ -36,6 +36,7 @@ import {
 import './KameletPropertyField.css';
 import {CogIcon, ExclamationCircleIcon, TimesIcon} from '@patternfly/react-icons';
 import {Property} from "@karavan-core/model/KameletModels";
+import {coercePropertyScalar} from "@/karavan/utils/workspaceFileResolver";
 import {ConfigurationSelectorModal} from "./ConfigurationSelectorModal";
 import {usePropertiesHook} from "../usePropertiesHook";
 import {isSensitiveFieldValid} from "../../utils/ValidatorUtils";
@@ -118,6 +119,14 @@ export function KameletPropertyField(props: Props) {
         setConfigurationSelector(false);
     }
 
+    const configurationSelectorSource = (): string => {
+        const fromText = coercePropertyScalar(textValue);
+        if (fromText) {
+            return fromText;
+        }
+        return coercePropertyScalar(value);
+    };
+
     function getConfigurationSelectorModal() {
         return (
             configurationSelector && <ConfigurationSelectorModal
@@ -125,7 +134,7 @@ export function KameletPropertyField(props: Props) {
                 isOpen={configurationSelector}
                 onClose={() => closeConfigurationSelector()}
                 name={property.id}
-                customCode={value}
+                customCode={configurationSelectorSource()}
                 defaultTabIndex={configurationSelectorDefaultTab}
                 dslLanguage={undefined}
                 title={property.title}
@@ -140,6 +149,13 @@ export function KameletPropertyField(props: Props) {
     }
 
     function getOpenConfigButton(property: Property, configurationSelectorDefaultTab: string = 'properties') {
+        const src = configurationSelectorSource();
+        if (
+            /\.(xslt?|xml|xsd)$/i.test(src)
+            || /^file:/i.test(src)
+        ) {
+            configurationSelectorDefaultTab = 'editor';
+        }
         return (
             <Tooltip position="bottom-end" content="Open config selector">
                 <Button icon={<CogIcon/>} variant="control" onClick={e => {

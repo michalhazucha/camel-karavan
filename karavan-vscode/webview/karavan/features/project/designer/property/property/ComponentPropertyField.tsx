@@ -322,7 +322,11 @@ export function ComponentPropertyField(props: Props) {
     function getOpenConfigButton(property: ComponentProperty, configurationSelectorDefaultTab: string = 'properties') {
         if (element?.dslName === 'ToDefinition' && (element as any)?.uri === 'sql' && property.name === 'query') {
             configurationSelectorDefaultTab = 'editor';
-        } else if (property.name === 'resourceUri' || /\.(xslt?|xml)$/i.test(configurationSelectorSource())) {
+        } else if (
+            property.name === 'resourceUri'
+            || /\.(xslt?|xml|xsd)$/i.test(configurationSelectorSource())
+            || /^file:/i.test(configurationSelectorSource())
+        ) {
             configurationSelectorDefaultTab = 'editor';
         }
         return (

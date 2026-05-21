@@ -316,8 +316,14 @@ export class DesignerView {
             const candidate = candidates[index];
             try {
                 const content = await utils.readWorkspaceRelativeFile(candidate);
-                console.log('[XKaravan] readWorkspaceFile ok', candidate, `(${content.length} chars)`);
-                panel.webview.postMessage({ command: 'workspaceFileContent', relativePath: candidate, content });
+                const cacheKey = utils.asWorkspaceRelativePath(candidate);
+                console.log('[XKaravan] readWorkspaceFile ok', cacheKey, `(${content.length} chars)`);
+                panel.webview.postMessage({
+                    command: 'workspaceFileContent',
+                    relativePath: cacheKey,
+                    requestedPath: relativePath,
+                    content,
+                });
             } catch (error) {
                 console.warn(`[XKaravan] Could not read workspace file at ${candidate}:`, error);
                 await tryRead(index + 1);

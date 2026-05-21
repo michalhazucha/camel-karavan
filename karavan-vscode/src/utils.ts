@@ -507,23 +507,65 @@ export async function listWorkspaceRelativeFiles(): Promise<string[]> {
     }
 }
 
+/** Strip file:, resource:, and leading ./ (same rules as webview workspaceFileResolver). */
+export const normalizeWorkspaceResourcePath = (raw: string): string => {
+    let p = raw.trim().replace(/\\/g, '/');
+    const schemeMatch = p.match(/^([a-z][a-z0-9+.-]*):/i);
+    if (schemeMatch) {
+        p = p.slice(schemeMatch[0].length);
+    }
+    while (p.startsWith('./')) {
+        p = p.slice(2);
+    }
+    while (p.startsWith('/')) {
+        p = p.slice(1);
+    }
+    return p;
+};
+
+/** Path relative to workspace root for webview cache keys (never absolute). */
+export const asWorkspaceRelativePath = (filePath: string): string => {
+    const rootPath = getRoot();
+    const normalizedInput = filePath.replace(/\\/g, '/');
+    if (!rootPath) {
+        return normalizeWorkspaceResourcePath(normalizedInput);
+    }
+    const normalizedRoot = path.resolve(rootPath);
+    const absolute = path.isAbsolute(filePath)
+        ? path.resolve(filePath)
+        : path.resolve(normalizedRoot, filePath);
+    if (absolute === normalizedRoot || absolute.startsWith(normalizedRoot + path.sep)) {
+        return path.relative(normalizedRoot, absolute).replace(/\\/g, '/');
+    }
+    return normalizeWorkspaceResourcePath(normalizedInput);
+};
+
 export const resolveWorkspaceFileReadCandidates = (
     fileName: string,
     integrationDir?: string,
     integrationFullPath?: string,
     extraCandidates?: string[],
 ): string[] => {
-    const normalizedName = fileName.replace(/\\/g, '/').split('/').pop() ?? fileName;
+    const normalized = normalizeWorkspaceResourcePath(fileName);
     const paths = new Set<string>();
     if (integrationFullPath) {
-        paths.add(path.join(path.dirname(integrationFullPath), normalizedName).replace(/\\/g, '/'));
+        const besideIntegration = path.join(path.dirname(integrationFullPath), normalized);
+        paths.add(asWorkspaceRelativePath(besideIntegration));
     }
     const dir = integrationDir?.replace(/\\/g, '/').replace(/\/$/, '') ?? '';
     if (dir) {
-        paths.add(`${dir}/${normalizedName}`);
+        paths.add(`${dir}/${normalized}`);
     }
-    paths.add(normalizedName);
-    extraCandidates?.forEach((c) => paths.add(c.replace(/\\/g, '/')));
+    paths.add(normalized);
+    const hasDirPrefix = normalized.includes('/');
+    if (!hasDirPrefix) {
+        const baseName = normalized.split('/').pop() ?? normalized;
+        if (dir) {
+            paths.add(`${dir}/${baseName}`);
+        }
+        paths.add(baseName);
+    }
+    extraCandidates?.forEach((c) => paths.add(normalizeWorkspaceResourcePath(c)));
     return Array.from(paths);
 };
 

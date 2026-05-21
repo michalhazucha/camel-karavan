@@ -20,15 +20,21 @@ export const useWorkspaceStore = createWithEqualityFn((set) => ({
         });
     },
     setWorkspaceFileContent: (relativePath: string, content: string) => {
-        if (!content || content === '[object Object]' || content === 'Buffer') {
+        const normalized = relativePath.replace(/\\/g, '/');
+        if (content === '[object Object]' || content === 'Buffer') {
             return;
         }
         set((state) => {
-            const fileContents = { ...state.fileContents, [relativePath]: content };
-            const base = relativePath.split(/[/\\]/).pop();
-            if (base && base !== relativePath) {
-                fileContents[base] = content;
+            const fileContents = { ...state.fileContents };
+            if (!content) {
+                delete fileContents[normalized];
+                const base = normalized.split('/').pop();
+                if (base && base !== normalized) {
+                    delete fileContents[base];
+                }
+                return { fileContents };
             }
+            fileContents[normalized] = content;
             return { fileContents };
         });
     },

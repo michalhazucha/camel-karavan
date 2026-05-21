@@ -11,13 +11,14 @@ Copy this file (or the **Copilot prompt** at the bottom) into **GitHub Copilot C
 | Case | Example | Result |
 |------|---------|--------|
 | File next to integration YAML | `order-transform.xslt` | Loads sibling file |
-| File in integration folder | `integrations/foo.camel.yaml` + `integrations/order-transform.xslt` | Tries `integrations/order-transform.xslt` first |
-| Editor language | `.xslt`, `.xml`, `.json`, … | Monaco language from extension |
+| File in subfolder | `xsd/test-variable.xsd` | Tries `{integrationDir}/xsd/test-variable.xsd` |
+| Camel file scheme | `file:./test-identity.xslt` | Strips `file:` and `./`, then resolves |
+| Kamelet paths | `file:./xsd/test-variable.xsd` on Variable Schema / Input Binding XSLT | Same + `.xsd` support |
+| Editor language | `.xslt`, `.xml`, `.xsd`, … | Monaco language from extension |
 
 **Not implemented yet (your next task):**
 
-- `file:transforms/order.xslt` (Camel `file:` prefix)
-- Nested paths without listing basename only everywhere
+- Nested paths with unresolved placeholders only
 - `file:{{rootDir}}/transforms/order.xslt` (property placeholders)
 - Opening **other `.yaml` / `.camel.yaml`** files from a property reference
 - `classpath:` / `http:` (should show a message, not read from disk)
