@@ -37,13 +37,48 @@ export const normalizeWorkspaceResourcePath = (raw: string): string => {
     return path;
 };
 
+const PROJECT_ROOT_PLACEHOLDER = /\{\{project\.root\.[^}]+\}\}/;
+
 export const isWorkspaceLoadableResource = (raw: string): boolean => {
     const trimmed = raw.trim();
     const schemeMatch = trimmed.match(/^([a-z][a-z0-9+.-]*):/i);
     if (schemeMatch && NON_WORKSPACE_SCHEMES.has(schemeMatch[1].toLowerCase())) {
         return false;
     }
+    if (PROJECT_ROOT_PLACEHOLDER.test(trimmed)) {
+        const pathPart = normalizeWorkspaceResourcePath(trimmed);
+        return RESOURCE_FILE_PATTERN.test(pathPart);
+    }
     return !trimmed.includes('{{');
+};
+
+/** Keys used to request and cache workspace file content (includes stored URIs with placeholders). */
+export const workspaceFileLookupKeys = (value: unknown, boundFileName: string | null): string[] => {
+    const keys = new Set<string>();
+    const raw = coercePropertyScalar(value);
+    if (boundFileName) {
+        keys.add(boundFileName);
+    }
+    if (raw) {
+        keys.add(raw);
+        keys.add(normalizeWorkspaceResourcePath(raw));
+        const withoutFile = raw.startsWith('file:') ? raw.slice(5) : raw;
+        keys.add(withoutFile);
+        keys.add(normalizeWorkspaceResourcePath(withoutFile));
+        if (!raw.startsWith('file:')) {
+            keys.add(`file:${raw}`);
+        }
+    }
+    return Array.from(keys);
+};
+
+/** Path sent to extension readWorkspaceFile (keeps file: and {{project.root.*}}). */
+export const storedPathForWorkspaceRequest = (value: unknown): string | null => {
+    const raw = coercePropertyScalar(value);
+    if (!raw || !isWorkspaceLoadableResource(raw)) {
+        return null;
+    }
+    return raw.startsWith('file:') ? raw : `file:${raw}`;
 };
 
 const SCALAR_OBJECT_KEYS = [
@@ -240,7 +275,15 @@ export const getWorkspaceFileContent = (
     workspaceFiles: string[],
     workspaceFileContents: Record<string, string>,
     integrationDir?: string,
+    extraLookupKeys?: string[],
 ): string | undefined => {
+    const directKeys = extraLookupKeys ?? [fileName];
+    for (const key of directKeys) {
+        const content = workspaceFileContents[key];
+        if (typeof content === 'string' && content.length > 0 && content !== '[object Object]') {
+            return content;
+        }
+    }
     for (const path of resolveWorkspaceRelativePaths(fileName, workspaceFiles, integrationDir)) {
         const content = workspaceFileContents[path];
         if (typeof content === 'string' && content.length > 0 && content !== '[object Object]') {
@@ -274,7 +317,14 @@ export const resolveEditorContent = (
     if (typeof fromIntegration === 'string' && fromIntegration.length > 0 && fromIntegration !== '[object Object]') {
         return fromIntegration;
     }
-    const fromWorkspace = getWorkspaceFileContent(fileName, workspaceFiles, workspaceFileContents, integrationDir);
+    const lookupKeys = workspaceFileLookupKeys(customCode, fileName);
+    const fromWorkspace = getWorkspaceFileContent(
+        fileName,
+        workspaceFiles,
+        workspaceFileContents,
+        integrationDir,
+        lookupKeys,
+    );
     if (fromWorkspace !== undefined) {
         return fromWorkspace;
     }

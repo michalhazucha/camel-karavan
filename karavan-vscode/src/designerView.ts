@@ -22,6 +22,7 @@ import * as path from "path";
 import * as vscode from "vscode";
 import { commands, ExtensionContext, Uri, ViewColumn, WebviewPanel, WebviewPanelOnDidChangeViewStateEvent, window } from "vscode";
 import * as utils from "./utils";
+import { resolveStoredPath } from "./propertiesResolver";
 import { getWebviewContent } from "./webviewContent";
 
 const KARAVAN_LOADED = "karavan:loaded";
@@ -329,7 +330,30 @@ export class DesignerView {
                 await tryRead(index + 1);
             }
         };
-        void tryRead(0);
+        const workspaceRoot = utils.getRoot() ?? '';
+        const searchRoot = workspaceRoot
+            || (integrationFullPath ? path.dirname(integrationFullPath) : '');
+        if (relativePath.includes('{{') && searchRoot) {
+            const stored = relativePath.startsWith('file:') ? relativePath : `file:${relativePath}`;
+            void resolveStoredPath(stored, searchRoot)
+                .then(async (absolute) => {
+                    const content = await utils.readWorkspaceRelativeFile(absolute);
+                    const cacheKey = utils.asWorkspaceRelativePath(absolute);
+                    console.log('[XKaravan] readWorkspaceFile ok (placeholder)', cacheKey, `(${content.length} chars)`);
+                    panel.webview.postMessage({
+                        command: 'workspaceFileContent',
+                        relativePath: cacheKey,
+                        requestedPath: relativePath,
+                        content,
+                    });
+                })
+                .catch((err) => {
+                    console.warn('[XKaravan] placeholder path resolve/read failed:', err);
+                    void tryRead(0);
+                });
+        } else {
+            void tryRead(0);
+        }
     }
 
     async handleDynamicFileContent(code: string): Promise<string> {

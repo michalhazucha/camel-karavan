@@ -22,6 +22,8 @@ import {
     resolveBoundFileName,
     resolveEditorContent,
     resolveWorkspaceRelativePaths,
+    storedPathForWorkspaceRequest,
+    workspaceFileLookupKeys,
 } from "@/karavan/utils/workspaceFileResolver";
 import { Badge, Button, capitalize, Content, Modal, ModalBody, ModalFooter, ModalHeader, TextInput, ToggleGroup, ToggleGroupItem } from '@patternfly/react-core';
 import { InnerScrollContainer, OuterScrollContainer, Table, Tbody, Td, Th, Thead, Tr } from "@patternfly/react-table";
@@ -107,7 +109,8 @@ export function ConfigurationSelectorModal(props: Props) {
         }
         syncEditorFromSources();
         const fileName = resolveBoundFileName(propertyScalar, inputLanguage);
-        if (!fileName) {
+        const storedPath = storedPathForWorkspaceRequest(propertyScalar);
+        if (!fileName || !storedPath) {
             return;
         }
         const integrationFile = integrationFiles.find((file) => file.name === fileName);
@@ -115,13 +118,14 @@ export function ConfigurationSelectorModal(props: Props) {
             typeof integrationFile?.code === 'string'
             && integrationFile.code.length > 0
             && integrationFile.code !== '[object Object]';
-        const workspacePaths = resolveWorkspaceRelativePaths(fileName, workspaceFiles, integrationDir);
-        const hasWorkspaceContent = workspacePaths.some(
-            (path) => typeof workspaceFileContents[path] === 'string' && workspaceFileContents[path].length > 0,
+        const lookupKeys = workspaceFileLookupKeys(propertyScalar, fileName);
+        const hasWorkspaceContent = lookupKeys.some(
+            (key) => typeof workspaceFileContents[key] === 'string' && workspaceFileContents[key].length > 0,
         );
+        const workspacePaths = resolveWorkspaceRelativePaths(fileName, workspaceFiles, integrationDir);
         if (!hasIntegrationContent && !hasWorkspaceContent) {
-            console.log("[XKaravan] requesting workspace file:", fileName, workspacePaths);
-            requestWorkspaceFile(fileName, integrationDir, workspacePaths);
+            console.log("[XKaravan] requesting workspace file:", storedPath, workspacePaths);
+            requestWorkspaceFile(storedPath, integrationDir, workspacePaths);
         }
     }, [isOpen, propertyScalar, integrationFiles, workspaceFiles, workspaceFileContents, inputLanguage, integrationDir]);
 
@@ -130,7 +134,8 @@ export function ConfigurationSelectorModal(props: Props) {
             return;
         }
         const fileName = resolveBoundFileName(propertyScalar, inputLanguage);
-        if (!fileName) {
+        const storedPath = storedPathForWorkspaceRequest(propertyScalar);
+        if (!fileName || !storedPath) {
             return;
         }
         syncEditorFromSources();
@@ -144,7 +149,7 @@ export function ConfigurationSelectorModal(props: Props) {
         );
         if (!resolved) {
             const workspacePaths = resolveWorkspaceRelativePaths(fileName, workspaceFiles, integrationDir);
-            requestWorkspaceFile(fileName, integrationDir, workspacePaths);
+            requestWorkspaceFile(storedPath, integrationDir, workspacePaths);
         }
     }, [tabIndex, isOpen, propertyScalar, workspaceFiles, workspaceFileContents, integrationDir, inputLanguage, integrationFiles]);
 
