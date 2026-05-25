@@ -14,12 +14,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+import { DslProperties } from "@features/project/designer/property/DslProperties";
+import { ExpressionEditor } from "@features/project/designer/property/expression/ExpressionEditor";
+import { Tab, Tabs, TabTitleText, } from '@patternfly/react-core';
+import { ErrorBoundaryWrapper } from "@shared/ui/ErrorBoundaryWrapper";
 import React from 'react';
-import {Tab, Tabs, TabTitleText,} from '@patternfly/react-core';
-import '@features/project/designer/property/DslProperties.css';
-import {ErrorBoundaryWrapper} from "@shared/ui/ErrorBoundaryWrapper";
-import {DslProperties} from "@features/project/designer/property/DslProperties";
-import {ExpressionEditor} from "@features/project/designer/property/expression/ExpressionEditor";
+import { MapperPanel } from "./MapperPanel";
 
 export function MainPropertiesPanel() {
 
@@ -48,6 +48,7 @@ export function MainPropertiesPanel() {
                       role="proeprty-type"
                 >
                     <Tab eventKey={'properties'} title={getTab('Properties', 'properties')} aria-label="Properties"/>
+                    <Tab eventKey={'mapper'} title={getTab('Mapper', 'mapper')} aria-label="Mapper"/>
                 </Tabs>
             </div>
         )
@@ -59,6 +60,7 @@ export function MainPropertiesPanel() {
             {getPropertiesPanelTabs()}
             <ErrorBoundaryWrapper onError={error => console.error(error)}>
                 {activeTabKey === 'properties' && <DslProperties expressionEditor={ExpressionEditor}/> }
+                {activeTabKey === 'mapper' && <MapperPanel/> }
             </ErrorBoundaryWrapper>
         </div>
     )

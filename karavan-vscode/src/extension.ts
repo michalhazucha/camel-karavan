@@ -24,6 +24,7 @@ import * as jbang from "./jbang";
 import { inputFileName, OpenApiItem, OpenApiView, selectFileName } from "./openapiView";
 import { TopologyView } from './topologyView';
 import * as utils from "./utils";
+import { XsltMapperView } from "./xsltMapperView";
 
 const KARAVAN_LOADED = "karavan:loaded";
 
@@ -52,6 +53,12 @@ export function activate(context: ExtensionContext) {
         topologyView.openKaravanWebView(args[0]?.fsPath);
     });
     context.subscriptions.push(topologyCommand);
+
+    const xsltMapperView = new XsltMapperView(context);
+    const xsltMapperCommand = commands.registerCommand("karavan.xslt-mapper", async () => {
+        await xsltMapperView.openKaravanWebView();
+    });
+    context.subscriptions.push(xsltMapperCommand);
 
     // Create new Integration command
     const createYaml = commands.registerCommand("karavan.create-yaml", (...args: any[]) => {

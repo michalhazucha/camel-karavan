@@ -28,7 +28,7 @@ import { TemplateApi } from "@karavan-core/api/TemplateApi";
 import { BeanFactoryDefinition } from "@karavan-core/model/CamelDefinition";
 import { IntegrationFile } from "@karavan-core/model/IntegrationDefinition";
 import { ProjectFile } from "@models/ProjectModels";
-import { Bullseye, Button, Content, PageSection, Spinner } from "@patternfly/react-core";
+import { Bullseye, Content, PageSection, Spinner } from "@patternfly/react-core";
 import { useFilesStore } from "@stores/ProjectStore";
 import { useWorkspaceStore } from "@stores/workspaceStore";
 import * as React from "react";
@@ -223,7 +223,6 @@ class App extends React.Component<Props, State> {
     const { loadingMessages, filename, key, yaml, page, loaded, tab } = this.state;
     return (
       <div className="karavan">
-        <Button variant="secondary" onClick={this.logWorkspaceFiles}>Log workspace files</Button>
         {!loaded &&
           <PageSection className="loading-page">
             <Bullseye>

@@ -1,0 +1,123 @@
+.mapper-shadcn {
+  --mapper-bg: hsl(224 71% 4%);
+  --mapper-card: hsl(222 47% 11%);
+  --mapper-card-2: hsl(224 32% 16%);
+  --mapper-border: hsl(215 25% 27%);
+  --mapper-fg: hsl(210 40% 98%);
+  --mapper-muted: hsl(215 20% 65%);
+  --mapper-primary: hsl(217 91% 60%);
+  --mapper-primary-fg: hsl(210 40% 98%);
+}
+
+.mapper-shadcn .mapper-shell {
+  display: grid;
+  gap: 12px;
+}
+
+.mapper-shadcn .mapper-card {
+  border: 1px solid var(--mapper-border);
+  border-radius: 12px;
+  padding: 10px;
+  background: linear-gradient(180deg, var(--mapper-card), var(--mapper-card-2));
+  color: var(--mapper-fg);
+}
+
+.mapper-shadcn .mapper-header {
+  padding: 12px;
+}
+
+.mapper-shadcn .mapper-subtitle {
+  opacity: 0.85;
+  margin-top: 4px;
+  color: var(--mapper-muted);
+}
+
+.mapper-shadcn .mapper-grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.mapper-shadcn .mapper-row {
+  display: flex;
+  gap: 8px;
+}
+
+.mapper-shadcn .mapper-wrap {
+  flex-wrap: wrap;
+}
+
+.mapper-shadcn .mapper-mt8 {
+  margin-top: 8px;
+}
+
+.mapper-shadcn .mapper-mb8 {
+  margin-bottom: 8px;
+}
+
+.mapper-shadcn .mapper-mt12 {
+  margin-top: 12px;
+}
+
+.mapper-shadcn .mapper-mb12 {
+  margin-bottom: 12px;
+}
+
+.mapper-shadcn .mapper-input,
+.mapper-shadcn .mapper-select,
+.mapper-shadcn .mapper-textarea {
+  width: 100%;
+  border: 1px solid var(--mapper-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: hsl(223 27% 18%);
+  color: var(--mapper-fg);
+  outline: none;
+}
+
+.mapper-shadcn .mapper-textarea {
+  min-height: 240px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace;
+}
+
+.mapper-shadcn .mapper-input:focus,
+.mapper-shadcn .mapper-select:focus,
+.mapper-shadcn .mapper-textarea:focus {
+  border-color: var(--mapper-primary);
+  box-shadow: 0 0 0 2px hsl(217 91% 60% / 0.3);
+}
+
+.mapper-shadcn .mapper-btn {
+  appearance: none;
+  border: 1px solid var(--mapper-border);
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: hsl(223 27% 18%);
+  color: var(--mapper-fg);
+  cursor: pointer;
+  transition: 160ms ease;
+}
+
+.mapper-shadcn .mapper-btn:hover {
+  border-color: var(--mapper-primary);
+  transform: translateY(-1px);
+}
+
+.mapper-shadcn .mapper-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.mapper-shadcn .mapper-btn-primary {
+  background: var(--mapper-primary);
+  color: var(--mapper-primary-fg);
+  border-color: hsl(217 91% 52%);
+}
+
+@media (max-width: 900px) {
+  .mapper-shadcn .mapper-grid2 {
+    grid-template-columns: 1fr;
+  }
+}

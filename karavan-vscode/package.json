@@ -52,6 +52,7 @@
     "onCommand:karavan.generate-rest",
     "onCommand:karavan.download-image",
     "onCommand:karavan.openKnowledgebase",
+    "onCommand:karavan.xslt-mapper",
     "onCommand:karavan.reportIssue",
     "onView:integrations"
   ],
@@ -424,6 +425,13 @@
           "description": "application.properties template for camel-main on Kubernetes",
           "scope": "machine",
           "order": 95
+        },
+        "Karavan.xsltMapperBuildPath": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to xsltmapper-generator/webview-ui/build folder",
+          "scope": "machine",
+          "order": 96
         }
       }
     },
@@ -498,6 +506,11 @@
       {
         "command": "karavan.reportIssue",
         "title": "Report Issue"
+      },
+      {
+        "command": "karavan.xslt-mapper",
+        "title": "Karavan: Open XSLT Mapper",
+        "icon": "$(symbol-namespace)"
       }
     ],
     "menus": {
@@ -551,6 +564,11 @@
           "command": "karavan.generate-rest",
           "when": "resourceExtname == .json || resourceExtname == .yaml",
           "group": "karavan@9"
+        },
+        {
+          "command": "karavan.xslt-mapper",
+          "when": "explorerResourceIsFolder || explorerResourceIsRoot",
+          "group": "karavan@10"
         }
       ],
       "editor/title": [
@@ -615,6 +633,11 @@
           "command": "integrations.refresh",
           "when": "view == integrations",
           "group": "navigation@5"
+        },
+        {
+          "command": "karavan.xslt-mapper",
+          "when": "view == integrations",
+          "group": "navigation@6"
         }
       ],
       "view/item/context": [

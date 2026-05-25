@@ -18,17 +18,21 @@ import { CamelDefinitionYaml } from "@karavan-core/api/CamelDefinitionYaml";
 import { BeanFactoryDefinition } from "@karavan-core/model/CamelDefinition";
 import { Integration, KameletTypes, MetadataLabels } from "@karavan-core/model/IntegrationDefinition";
 import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 import { commands, ExtensionContext, Uri, ViewColumn, WebviewPanel, WebviewPanelOnDidChangeViewStateEvent, window } from "vscode";
-import * as utils from "./utils";
 import { resolveStoredPath } from "./propertiesResolver";
+import * as utils from "./utils";
 import { getWebviewContent } from "./webviewContent";
+import { getEmbeddedMapperHtml, resolveXsltMapperBuildPath } from "./xsltMapperView";
 
 const KARAVAN_LOADED = "karavan:loaded";
 const KARAVAN_PANELS: Map<string, WebviewPanel> = new Map<string, WebviewPanel>();
 
 export class DesignerView {
+
+    private mapperPreviewFiles: Map<string, { filePath: string, watcher?: vscode.Disposable }> = new Map();
 
     constructor(private context: ExtensionContext, private rootPath?: string) {
 
@@ -158,6 +162,18 @@ export class DesignerView {
                                 message.candidatePaths,
                             );
                             break;
+                        case 'openXSLTPreview':
+                            this.openEmbeddedMapperPreview(panel, relativePath, message.content);
+                            break;
+                        case 'getEmbeddedMapperHtml':
+                            this.sendEmbeddedMapperHtml(panel);
+                            break;
+                        case 'configureEmbeddedMapperPath':
+                            this.configureEmbeddedMapperPath(panel);
+                            break;
+                        case 'chooseMapperWorkspaceFile':
+                            this.chooseMapperWorkspaceFile(panel, message.role, message.extensions);
+                            break;
                     }
                 },
                 undefined,
@@ -165,6 +181,12 @@ export class DesignerView {
             );
             // Handle close event
             panel.onDidDispose(() => {
+                const preview = this.mapperPreviewFiles.get(relativePath);
+                preview?.watcher?.dispose();
+                if (preview?.filePath && fs.existsSync(preview.filePath)) {
+                    fs.unlinkSync(preview.filePath);
+                }
+                this.mapperPreviewFiles.delete(relativePath);
                 KARAVAN_PANELS.delete(relativePath);
                 commands.executeCommand("setContext", KARAVAN_LOADED, false);
             }, null, this.context.subscriptions);
@@ -288,6 +310,58 @@ export class DesignerView {
             });
     }
 
+    async chooseMapperWorkspaceFile(panel: WebviewPanel, role?: string, extensions?: string[]) {
+        try {
+            const allFiles = await utils.listWorkspaceRelativeFiles();
+            const normalizedExtensions = (extensions ?? [".xsd", ".xml", ".wsdl", ".xsl", ".xslt"])
+                .map((x) => x.toLowerCase());
+
+            const filteredFiles = allFiles
+                .filter((file) => {
+                    const lower = file.toLowerCase();
+                    return normalizedExtensions.some((ext) => lower.endsWith(ext));
+                })
+                .sort((a, b) => a.localeCompare(b));
+
+            if (filteredFiles.length === 0) {
+                panel.webview.postMessage({
+                    command: 'mapperWorkspaceFileSelected',
+                    role,
+                    error: `No files found for extensions: ${normalizedExtensions.join(', ')}`,
+                });
+                return;
+            }
+
+            const selected = await window.showQuickPick(filteredFiles, {
+                title: `Select workspace file for ${role ?? 'mapper'}`,
+                canPickMany: false,
+                ignoreFocusOut: true,
+            });
+
+            if (!selected) {
+                panel.webview.postMessage({
+                    command: 'mapperWorkspaceFilePickCanceled',
+                    role,
+                });
+                return;
+            }
+
+            const content = await utils.readWorkspaceRelativeFile(selected);
+            panel.webview.postMessage({
+                command: 'mapperWorkspaceFileSelected',
+                role,
+                relativePath: selected,
+                content,
+            });
+        } catch (error: any) {
+            panel.webview.postMessage({
+                command: 'mapperWorkspaceFileSelected',
+                role,
+                error: error?.message ?? String(error),
+            });
+        }
+    }
+
     readWorkspaceFile(
         panel: WebviewPanel,
         relativePath: string,
@@ -356,6 +430,93 @@ export class DesignerView {
         }
     }
 
+    async sendEmbeddedMapperHtml(panel: WebviewPanel) {
+        try {
+            const buildPath = await resolveXsltMapperBuildPath(false);
+            if (!buildPath) {
+                panel.webview.postMessage({
+                    command: 'embeddedMapperHtml',
+                    html: undefined,
+                    error: 'XSLT mapper build path is not configured.',
+                });
+                return;
+            }
+
+            panel.webview.postMessage({
+                command: 'embeddedMapperHtml',
+                html: getEmbeddedMapperHtml(buildPath),
+            });
+        } catch (error: any) {
+            panel.webview.postMessage({
+                command: 'embeddedMapperHtml',
+                html: undefined,
+                error: error?.message ?? String(error),
+            });
+        }
+    }
+
+    async configureEmbeddedMapperPath(panel: WebviewPanel) {
+        try {
+            const buildPath = await resolveXsltMapperBuildPath(true);
+            if (!buildPath) {
+                panel.webview.postMessage({
+                    command: 'embeddedMapperHtml',
+                    html: undefined,
+                    error: 'XSLT mapper build path is not configured.',
+                });
+                return;
+            }
+            panel.webview.postMessage({
+                command: 'embeddedMapperHtml',
+                html: getEmbeddedMapperHtml(buildPath),
+            });
+        } catch (error: any) {
+            panel.webview.postMessage({
+                command: 'embeddedMapperHtml',
+                html: undefined,
+                error: error?.message ?? String(error),
+            });
+        }
+    }
+
+    async openEmbeddedMapperPreview(panel: WebviewPanel, panelKey: string, content?: string) {
+        if (!content) {
+            window.showWarningMessage("XSLT mapper did not provide content to preview.");
+            return;
+        }
+
+        try {
+            const previous = this.mapperPreviewFiles.get(panelKey);
+            previous?.watcher?.dispose();
+            if (previous?.filePath && fs.existsSync(previous.filePath)) {
+                fs.unlinkSync(previous.filePath);
+            }
+
+            const tempXsltFilePath = path.join(os.tmpdir(), `karavan-xsltmapper-${Date.now()}.xslt`);
+            fs.writeFileSync(tempXsltFilePath, content, "utf8");
+
+            const doc = await vscode.workspace.openTextDocument(tempXsltFilePath);
+            await window.showTextDocument(doc, {
+                preview: false,
+                viewColumn: ViewColumn.Beside,
+            });
+
+            const watcher = vscode.workspace.onDidSaveTextDocument((savedDoc) => {
+                if (savedDoc.uri.fsPath === tempXsltFilePath) {
+                    const updated = fs.readFileSync(tempXsltFilePath, "utf8");
+                    panel.webview.postMessage({
+                        command: 'xsltUpdated',
+                        content: updated,
+                    });
+                }
+            });
+
+            this.mapperPreviewFiles.set(panelKey, { filePath: tempXsltFilePath, watcher });
+        } catch (error: any) {
+            window.showErrorMessage(`Failed to open XSLT preview: ${error?.message ?? error}`);
+        }
+    }
+
     async handleDynamicFileContent(code: string): Promise<string> {
         try {
             const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
@@ -376,7 +537,8 @@ export class DesignerView {
                 return code; // Return the original code if it's not a valid file
             }
         } catch (error) {
-            vscode.window.showErrorMessage(`Failed to handle file content: ${error.message}`);
+            const message = error instanceof Error ? error.message : String(error);
+            vscode.window.showErrorMessage(`Failed to handle file content: ${message}`);
             return code; // Return the original code in case of an error
         }
     }
