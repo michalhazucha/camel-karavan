@@ -15,6 +15,7 @@ import { useWorkspaceStore } from "@stores/workspaceStore";
 import vscode from "@/vscode";
 import { EventBus } from "../../utils/EventBus";
 import { useDesignerStore, useIntegrationStore } from "../../DesignerStore";
+import { resolvePathAgainstIntegrationDir } from "@/karavan/utils/workspaceFileResolver";
 import {
     getMapperXslt,
     parseMapperConfig,
@@ -48,10 +49,17 @@ const resolveMapperAssetPath = (path: string | undefined, integrationDir: string
         return undefined;
     }
     const normalized = normalizePath(path.trim());
-    if (normalized.includes("/") || !integrationDir) {
+    if (!integrationDir) {
         return normalized;
     }
-    return `${normalizePath(integrationDir)}/${normalized}`;
+    const dir = normalizePath(integrationDir);
+    if (normalized.includes("..") || normalized.startsWith(".")) {
+        return resolvePathAgainstIntegrationDir(normalized, dir);
+    }
+    if (normalized.includes("/")) {
+        return normalized;
+    }
+    return `${dir}/${normalized}`;
 };
 
 export const buildMapperContext = (

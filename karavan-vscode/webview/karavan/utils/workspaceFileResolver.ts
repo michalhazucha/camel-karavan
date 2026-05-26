@@ -218,6 +218,23 @@ const joinRelative = (dir: string, fileName: string): string => {
     return d ? `${d}/${fileName}` : fileName;
 };
 
+/** Resolve ../ and ./ segments against the integration folder (e.g. ../xsd/foo → xsd/foo). */
+export const resolvePathAgainstIntegrationDir = (filePath: string, integrationDir: string): string => {
+    const baseParts = integrationDir.replace(/\\/g, '/').replace(/\/$/, '').split('/').filter(Boolean);
+    const stack = [...baseParts];
+    for (const part of filePath.replace(/\\/g, '/').split('/')) {
+        if (part === '' || part === '.') {
+            continue;
+        }
+        if (part === '..') {
+            stack.pop();
+        } else {
+            stack.push(part);
+        }
+    }
+    return stack.join('/');
+};
+
 const workspacePathMatches = (workspacePath: string, fileName: string): boolean => {
     const p = workspacePath.replace(/\\/g, '/');
     const f = fileName.replace(/\\/g, '/');
@@ -233,11 +250,16 @@ export const resolveWorkspaceRelativePaths = (
     const paths = new Set<string>();
     const dir = integrationDir?.replace(/\\/g, '/').replace(/\/$/, '') ?? '';
     const hasDirPrefix = normalizedFile.includes('/');
+    const needsResolveAgainstIntegration = normalizedFile.includes('..') || normalizedFile.startsWith('.');
 
-    if (dir) {
+    if (dir && needsResolveAgainstIntegration) {
+        paths.add(resolvePathAgainstIntegrationDir(normalizedFile, dir));
+    } else {
+        paths.add(normalizedFile);
+    }
+    if (dir && !hasDirPrefix) {
         paths.add(joinRelative(dir, normalizedFile));
     }
-    paths.add(normalizedFile);
 
     // Only fall back to basename / fuzzy workspace match for simple filenames (e.g. order-transform.xslt).
     // Paths with a directory (e.g. xslt/test-variable.xsd) must resolve exactly — never load xsd/test-variable.xsd.

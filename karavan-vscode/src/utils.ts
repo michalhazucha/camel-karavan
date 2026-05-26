@@ -540,6 +540,12 @@ export const asWorkspaceRelativePath = (filePath: string): string => {
     return normalizeWorkspaceResourcePath(normalizedInput);
 };
 
+const resolvePathAgainstIntegrationDir = (filePath: string, integrationDir: string): string => {
+    const base = integrationDir.replace(/\\/g, '/').replace(/\/$/, '');
+    const file = filePath.replace(/\\/g, '/');
+    return path.posix.normalize(path.posix.join(base || '.', file));
+};
+
 export const resolveWorkspaceFileReadCandidates = (
     fileName: string,
     integrationDir?: string,
@@ -547,26 +553,42 @@ export const resolveWorkspaceFileReadCandidates = (
     extraCandidates?: string[],
 ): string[] => {
     const normalized = normalizeWorkspaceResourcePath(fileName);
-    const paths = new Set<string>();
+    const ordered: string[] = [];
+    const seen = new Set<string>();
+    const add = (p: string) => {
+        const n = normalizeWorkspaceResourcePath(p);
+        if (n && !seen.has(n)) {
+            seen.add(n);
+            ordered.push(n);
+        }
+    };
+
+    const dir = integrationDir?.replace(/\\/g, '/').replace(/\/$/, '') ?? '';
+    const hasDirPrefix = normalized.includes('/');
+    const needsResolveAgainstIntegration = normalized.includes('..') || normalized.startsWith('.');
+
+    if (dir && needsResolveAgainstIntegration) {
+        add(resolvePathAgainstIntegrationDir(normalized, dir));
+    } else {
+        add(normalized);
+    }
     if (integrationFullPath) {
         const besideIntegration = path.join(path.dirname(integrationFullPath), normalized);
-        paths.add(asWorkspaceRelativePath(besideIntegration));
+        add(asWorkspaceRelativePath(besideIntegration));
     }
-    const dir = integrationDir?.replace(/\\/g, '/').replace(/\/$/, '') ?? '';
-    if (dir) {
-        paths.add(`${dir}/${normalized}`);
+    // Simple filenames (e.g. order-transform.xslt) live beside the integration; not xsd/foo.xsd at workspace root.
+    if (dir && !hasDirPrefix) {
+        add(`${dir}/${normalized}`);
     }
-    paths.add(normalized);
-    const hasDirPrefix = normalized.includes('/');
     if (!hasDirPrefix) {
         const baseName = normalized.split('/').pop() ?? normalized;
         if (dir) {
-            paths.add(`${dir}/${baseName}`);
+            add(`${dir}/${baseName}`);
         }
-        paths.add(baseName);
+        add(baseName);
     }
-    extraCandidates?.forEach((c) => paths.add(normalizeWorkspaceResourcePath(c)));
-    return Array.from(paths);
+    extraCandidates?.forEach((c) => add(normalizeWorkspaceResourcePath(c)));
+    return ordered;
 };
 
 export async function readWorkspaceRelativeFile(relativePath: string): Promise<string> {
@@ -587,11 +609,6 @@ export async function readWorkspaceRelativeFile(relativePath: string): Promise<s
         throw new Error(`Path is outside the workspace: ${relativePath}`);
     }
 
-    try {
-        const bytes = await readFile(normalizedAbsolute);
-        return Buffer.from(bytes).toString('utf8');
-    } catch (error) {
-        console.error('Error reading workspace file:', error);
-        throw error;
-    }
+    const bytes = await readFile(normalizedAbsolute);
+    return Buffer.from(bytes).toString('utf8');
 }
