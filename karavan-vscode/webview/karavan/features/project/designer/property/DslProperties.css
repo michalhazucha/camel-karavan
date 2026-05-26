@@ -24,6 +24,14 @@
     border-left-color: var(--pf-t--global--border--color--default);
     border-left-style: solid;
     border-left-width: var(--pf-t--global--border--width--box--default);
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+}
+
+.karavan .main-properties .karavan-mapper-mount {
+    flex: 1;
+    min-height: 0;
 }
 
 .karavan .main-properties .main-tabs-wrapper .main-tabs .top-menu-item {

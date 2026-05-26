@@ -11,7 +11,6 @@ export const requestWorkspaceFile = (
     candidatePaths?: string[],
 ) => {
     const { integrationFullPath } = useWorkspaceStore.getState();
-    console.log("[XKaravan] postMessage readWorkspaceFile", relativePath, candidatePaths);
     vscode?.postMessage({
         command: "readWorkspaceFile",
         relativePath,

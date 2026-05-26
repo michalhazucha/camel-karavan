@@ -101,7 +101,9 @@ class App extends React.Component<Props, State> {
 
   onMessage = (event) => {
     const message = event.data;
-    console.log("message.command", message);
+    if (message.command !== 'workspaceFileContent') {
+      console.log("message.command", message.command);
+    }
     switch (message.command) {
       case 'kamelets':
         KameletApi.saveCustomKamelets(message.kamelets, true);

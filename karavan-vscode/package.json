@@ -683,11 +683,18 @@
       }
     ]
   },
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
+    "build:mapper-core": "npm run build -w @karavan/mapper-core",
+    "build:mapper-ui": "npm run build -w @karavan/mapper-ui",
+    "build:mapper": "npm run build:mapper-core && npm run build:mapper-ui",
+    "watch:mapper": "npm run build:mapper-core && npm run build -w @karavan/mapper-ui -- --watch",
     "vscode:prepublish": "npm run && npm run package",
-    "compile": "npm run && cross-env NODE_ENV=development node --max-old-space-size=8192 ./node_modules/webpack/bin/webpack.js --progress --stats-error-details",
+    "compile": "npm run build:mapper && npm run && cross-env NODE_ENV=development node --max-old-space-size=8192 ./node_modules/webpack/bin/webpack.js --progress --stats-error-details",
     "watch": "npm run && cross-env NODE_ENV=development node --max-old-space-size=8192 ./node_modules/webpack/bin/webpack.js --progress --watch",
-    "package": "npm run && cross-env NODE_ENV=production node --max-old-space-size=8192 ./node_modules/webpack/bin/webpack.js --progress",
+    "package": "npm run build:mapper && npm run && cross-env NODE_ENV=production node --max-old-space-size=8192 ./node_modules/webpack/bin/webpack.js --progress",
     "webpack": "cross-env NODE_ENV=development node --max-old-space-size=8192 ./node_modules/webpack/bin/webpack.js --progress",
     "test-compile": "tsc -p ./",
     "test-watch": "tsc -watch -p ./",
@@ -723,7 +730,8 @@
     "use-sync-external-store": "1.6.0",
     "usehooks-ts": "3.1.1",
     "uuid": "13.0.0",
-    "zustand": "5.0.11"
+    "zustand": "5.0.11",
+    "@karavan/mapper-core": "file:packages/mapper-core"
   },
   "devDependencies": {
     "@babel/plugin-proposal-private-property-in-object": "^7.21.11",

@@ -31,7 +31,9 @@
       "@shared/*": ["webview/karavan/shared/*"],
       "@stores/*": ["webview/karavan/stores/*"],
       "@util/*": ["webview/karavan/util/*"],
-      "@karavan-core/*": ["webview/karavan-core/*"]
+      "@karavan-core/*": ["webview/karavan-core/*"],
+      "@karavan/mapper-core": ["packages/mapper-core/src/index.ts"],
+      "@karavan/mapper-core/*": ["packages/mapper-core/src/*"]
     },
     "importHelpers": true,
     "skipLibCheck": true

@@ -41,9 +41,10 @@ export class CodeUtils {
             try {
                 const i = CamelDefinitionYaml.yamlToIntegration(file.name, file.code);
                 integrations.push(i);
-            } catch (e: any){
-                console.error(e);
-                EventBus.sendAlert(`Error parsing ${file.name}`, e?.message, 'danger');
+            } catch (e: unknown){
+                const message = e instanceof Error ? e.message : String(e);
+                console.warn(`Karavan skipped invalid integration YAML: ${file.name} — ${message}`);
+                EventBus.sendAlert(`Error parsing ${file.name}`, message, 'danger');
             }
         })
         return integrations;
