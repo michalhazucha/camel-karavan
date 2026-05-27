@@ -160,6 +160,7 @@ export class DesignerView {
                                 message.integrationDir,
                                 message.integrationFullPath,
                                 message.candidatePaths,
+                                message.requestedRole,
                             );
                             break;
                         case 'openXSLTPreview':
@@ -368,6 +369,7 @@ export class DesignerView {
         integrationDir?: string,
         integrationFullPath?: string,
         candidatePaths?: string[],
+        requestedRole?: string,
     ) {
         const candidates = utils.resolveWorkspaceFileReadCandidates(
             relativePath,
@@ -383,6 +385,8 @@ export class DesignerView {
                 panel.webview.postMessage({
                     command: 'workspaceFileContent',
                     relativePath: candidates[0] ?? relativePath,
+                    requestedPath: relativePath,
+                    requestedRole,
                     content: null,
                     error: err,
                 });
@@ -397,6 +401,7 @@ export class DesignerView {
                     command: 'workspaceFileContent',
                     relativePath: cacheKey,
                     requestedPath: relativePath,
+                    requestedRole,
                     content,
                 });
             } catch (error) {
@@ -418,6 +423,7 @@ export class DesignerView {
                         command: 'workspaceFileContent',
                         relativePath: cacheKey,
                         requestedPath: relativePath,
+                        requestedRole,
                         content,
                     });
                 })

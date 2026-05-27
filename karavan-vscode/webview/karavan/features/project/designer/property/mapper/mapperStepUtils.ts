@@ -52,16 +52,22 @@ const isKameletMapperUri = (uri?: string): boolean => {
 
 export const getMapperXslt = (step?: CamelElement): string => {
     const noteConfig = parseMapperConfig((step as any)?.note);
-    if (noteConfig.xslt) {
-        return noteConfig.xslt;
-    }
     const expression = (step as any)?.expression as ExpressionDefinition | undefined;
     const language = expression?.language as LanguageExpression | undefined;
-    if (language?.expression) {
-        const lang = (language.language ?? "").toLowerCase();
-        if (lang === "xslt" || lang === "" || lang === "language") {
-            return language.expression;
-        }
+    const lang = (language?.language ?? "").toLowerCase();
+    const inline =
+        language?.expression &&
+        (lang === "xslt" || lang === "" || lang === "language")
+            ? language.expression
+            : "";
+
+    // Prefer the inline DSL expression — that is what Camel runs. A copy in `note` can be stale
+    // (e.g. after "Save to Activity" updated only expression, or older saves duplicated xslt in note).
+    if (inline?.trim()) {
+        return inline;
+    }
+    if (noteConfig.xslt?.trim()) {
+        return noteConfig.xslt;
     }
     return "";
 };

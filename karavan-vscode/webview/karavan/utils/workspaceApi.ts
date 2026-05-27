@@ -9,6 +9,7 @@ export const requestWorkspaceFile = (
     relativePath: string,
     integrationDir?: string,
     candidatePaths?: string[],
+    requestedRole?: "source" | "target" | "xslt",
 ) => {
     const { integrationFullPath } = useWorkspaceStore.getState();
     vscode?.postMessage({
@@ -17,5 +18,6 @@ export const requestWorkspaceFile = (
         integrationDir: integrationDir || undefined,
         integrationFullPath: integrationFullPath || undefined,
         candidatePaths: candidatePaths?.length ? candidatePaths : undefined,
+        requestedRole,
     });
 };

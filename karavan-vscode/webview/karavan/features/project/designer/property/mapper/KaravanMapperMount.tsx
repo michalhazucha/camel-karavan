@@ -185,15 +185,18 @@ export const KaravanMapperMount = () => {
                 bundle.mountKaravanMapper(container, host);
                 const ctx = host.getContext();
                 const { integrationDir } = useWorkspaceStore.getState();
-                const requestMapperFile = (path: string | undefined) => {
+                const requestMapperFile = (
+                    path: string | undefined,
+                    role: "source" | "target",
+                ) => {
                     if (!path) {
                         return;
                     }
                     const candidates = workspaceFileLookupKeys(path, null);
-                    requestWorkspaceFile(path, integrationDir || undefined, candidates);
+                    requestWorkspaceFile(path, integrationDir || undefined, candidates, role);
                 };
-                requestMapperFile(ctx?.sourcePath);
-                requestMapperFile(ctx?.targetPath);
+                requestMapperFile(ctx?.sourcePath, "source");
+                requestMapperFile(ctx?.targetPath, "target");
                 setLoadError(undefined);
             } catch (error: unknown) {
                 if (!cancelled) {

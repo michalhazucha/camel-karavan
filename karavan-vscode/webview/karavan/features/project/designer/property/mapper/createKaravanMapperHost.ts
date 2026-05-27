@@ -15,7 +15,11 @@ import { useWorkspaceStore } from "@stores/workspaceStore";
 import vscode from "@/vscode";
 import { EventBus } from "../../utils/EventBus";
 import { useDesignerStore, useIntegrationStore } from "../../DesignerStore";
-import { resolvePathAgainstIntegrationDir } from "@/karavan/utils/workspaceFileResolver";
+import {
+    getWorkspaceFileContent,
+    resolvePathAgainstIntegrationDir,
+    workspaceFileLookupKeys,
+} from "@/karavan/utils/workspaceFileResolver";
 import {
     getMapperXslt,
     parseMapperConfig,
@@ -84,9 +88,10 @@ export const saveMapperToActivity = (
     payload: KaravanMapperSavePayload,
 ): CamelElement => {
     const clone = CamelUtil.cloneStep(mapperStep) as any;
+    const prevNoteConfig = parseMapperConfig((mapperStep as any)?.note);
     const config: MapperConfig = {
-        sourcePath: payload.sourcePath?.trim() || undefined,
-        targetPath: payload.targetPath?.trim() || undefined,
+        sourcePath: payload.sourcePath?.trim() || prevNoteConfig.sourcePath?.trim() || undefined,
+        targetPath: payload.targetPath?.trim() || prevNoteConfig.targetPath?.trim() || undefined,
     };
 
     if (clone.dslName === "TransformDefinition") {
@@ -142,6 +147,18 @@ export const createKaravanMapperHost = (
         }
         const { files, integrationDir } = useWorkspaceStore.getState();
         return buildMapperContext(step, files ?? [], integrationDir);
+    },
+
+    getCachedWorkspaceFile: (relativePath) => {
+        const { files, integrationDir, fileContents } = useWorkspaceStore.getState();
+        const keys = workspaceFileLookupKeys(relativePath, relativePath);
+        return getWorkspaceFileContent(
+            relativePath,
+            files ?? [],
+            fileContents,
+            integrationDir,
+            keys,
+        );
     },
 
     pickWorkspaceFile: (role, extensions) => {

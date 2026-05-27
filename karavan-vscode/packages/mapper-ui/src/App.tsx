@@ -68,7 +68,21 @@ function App({ host }: AppProps) {
   }>
   >([])
   const [originalLoadedXSLT, setOriginalLoadedXSLT] = useState<string | null>(null)
+  const [activeSchemaPaths, setActiveSchemaPaths] = useState<{ source?: string; target?: string }>({})
+  const pendingXsltRef = useRef<string | null>(null)
+  const schemasAwaitingXsltRef = useRef(false)
 
+  const PLACEHOLDER_SOURCE = "SourceSchema"
+  const PLACEHOLDER_TARGET = "TargetSchema"
+
+  const isRealSchema = (
+    schema: IMapperProject["sourceSchema"],
+    placeholderName: string,
+  ): boolean =>
+    Boolean(
+      schema?.nodes?.length &&
+      schema.nodes[0].name !== placeholderName,
+    )
 
   const [sheetOpen, setSheetOpen] = useState(false)
   useEffect(() => {
@@ -76,28 +90,84 @@ function App({ host }: AppProps) {
       return;
     }
     const ctx = host.getContext();
+    setActiveSchemaPaths({
+      source: ctx?.sourcePath,
+      target: ctx?.targetPath,
+    });
+    pendingXsltRef.current = null;
+    schemasAwaitingXsltRef.current = false;
+
     if (ctx?.xslt?.trim()) {
-      void applyXsltContent(ctx.xslt);
+      if (ctx.sourcePath || ctx.targetPath) {
+        pendingXsltRef.current = ctx.xslt;
+        schemasAwaitingXsltRef.current = true;
+      } else {
+        void applyXsltContent(ctx.xslt);
+      }
     }
+
+    const loadCachedSchema = (role: "source" | "target", path?: string) => {
+      if (!path?.trim()) {
+        return;
+      }
+      const cached = host.getCachedWorkspaceFile?.(path);
+      if (cached?.trim()) {
+        void loadXsdFromContent(cached, role, path);
+      }
+    };
+    loadCachedSchema("source", ctx?.sourcePath);
+    loadCachedSchema("target", ctx?.targetPath);
+
     return host.subscribe((event) => {
       if (event.type === "xsltUpdated" && event.content) {
         void applyXsltContent(event.content);
       }
       if (event.type === "workspaceFile" && event.relativePath) {
-        if (event.role === "source") {
-          void loadXsdFromContent(event.content ?? "", "source");
-        } else if (event.role === "target") {
-          void loadXsdFromContent(event.content ?? "", "target");
+        if (event.role === "source" || event.role === "target") {
+          if (event.relativePath) {
+            setActiveSchemaPaths((prev) => ({
+              ...prev,
+              [event.role === "source" ? "source" : "target"]: event.relativePath,
+            }));
+          }
+          if (event.content?.trim()) {
+            void loadXsdFromContent(event.content, event.role, event.relativePath);
+          }
         } else if (event.role === "xslt" && event.content) {
           void applyXsltContent(event.content);
         }
       }
-      if (event.type === "contextChanged" && event.context?.xslt) {
-        setGeneratedXSLT(event.context.xslt);
-        setShowXSLT(true);
+      if (event.type === "contextChanged" && event.context) {
+        setActiveSchemaPaths({
+          source: event.context.sourcePath,
+          target: event.context.targetPath,
+        });
+        if (event.context.xslt) {
+          setGeneratedXSLT(event.context.xslt);
+          setShowXSLT(true);
+        }
       }
     });
   }, [host]);
+
+  useEffect(() => {
+    if (!host || !schemasAwaitingXsltRef.current) {
+      return;
+    }
+    const xslt = pendingXsltRef.current;
+    if (!xslt?.trim()) {
+      return;
+    }
+    if (!isRealSchema(project.sourceSchema, PLACEHOLDER_SOURCE)) {
+      return;
+    }
+    if (!isRealSchema(project.targetSchema, PLACEHOLDER_TARGET)) {
+      return;
+    }
+    pendingXsltRef.current = null;
+    schemasAwaitingXsltRef.current = false;
+    void applyXsltContent(xslt);
+  }, [host, project.sourceSchema, project.targetSchema]);
 
   const loadXsltContent = async (content: string, options?: { silent?: boolean }) => {
     try {
@@ -172,12 +242,22 @@ function App({ host }: AppProps) {
     await loadXsltContent(content, { silent: true });
   };
 
-  const loadXsdFromContent = async (content: string, side: "source" | "target") => {
+  const loadXsdFromContent = async (
+    content: string,
+    side: "source" | "target",
+    relativePath?: string,
+  ) => {
     if (!content.trim()) {
       return;
     }
     try {
       const schema = parser.parse(content);
+      if (relativePath) {
+        setActiveSchemaPaths((prev) => ({
+          ...prev,
+          [side === "source" ? "source" : "target"]: relativePath,
+        }));
+      }
       setProject((prev) => ({
         ...prev,
         sourceSchema: side === "source" ? schema : prev.sourceSchema,
@@ -520,6 +600,8 @@ function App({ host }: AppProps) {
 
       // Clear original loaded XSLT since we're resetting
       setOriginalLoadedXSLT(null)
+      pendingXsltRef.current = null
+      schemasAwaitingXsltRef.current = false
 
       if (schema && schema == "source") {
         const sourceXSD = xsdParser.generateEmptyXSD("SourceSchema")
@@ -651,8 +733,8 @@ function App({ host }: AppProps) {
     const ctx = host.getContext();
     host.saveToActivity({
       xslt,
-      sourcePath: ctx?.sourcePath,
-      targetPath: ctx?.targetPath,
+      sourcePath: activeSchemaPaths.source ?? ctx?.sourcePath,
+      targetPath: activeSchemaPaths.target ?? ctx?.targetPath,
     });
   }
 

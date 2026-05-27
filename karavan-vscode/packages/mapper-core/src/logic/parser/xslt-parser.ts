@@ -345,10 +345,10 @@ ${elementsXML}
     this.extractNamespaces(xmlDoc);
 
     // Find all xsl:param elements using both CSS and local name matching
-    const paramElements = [
-      ...Array.from(xmlDoc.querySelectorAll('param')),
-      ...this.getElementsByLocalName(xmlDoc, 'param')
-    ];
+    const paramElements = this.getUniqueElements(
+      Array.from(xmlDoc.querySelectorAll('param')),
+      this.getElementsByLocalName(xmlDoc, 'param'),
+    );
     console.log("Found", paramElements.length, "xsl:param elements");
 
     this.parameters.clear();
@@ -360,11 +360,12 @@ ${elementsXML}
       }
     });
 
-    // Find all xsl:value-of elements
-    const valueOfElements = [
-      ...Array.from(xmlDoc.querySelectorAll('value-of')),
-      ...this.getElementsByLocalName(xmlDoc, 'value-of')
-    ];
+    // Find all xsl:value-of elements.
+    // Both selectors can return the same node; dedupe to avoid duplicate mappings.
+    const valueOfElements = this.getUniqueElements(
+      Array.from(xmlDoc.querySelectorAll('value-of')),
+      this.getElementsByLocalName(xmlDoc, 'value-of'),
+    );
     console.log("Found", valueOfElements.length, "xsl:value-of elements");
 
     valueOfElements.forEach((element, index) => {
@@ -416,10 +417,10 @@ ${elementsXML}
     });
 
     // Find all xsl:copy-of elements
-    const copyOfElements = [
-      ...Array.from(xmlDoc.querySelectorAll('copy-of')),
-      ...this.getElementsByLocalName(xmlDoc, 'copy-of')
-    ];
+    const copyOfElements = this.getUniqueElements(
+      Array.from(xmlDoc.querySelectorAll('copy-of')),
+      this.getElementsByLocalName(xmlDoc, 'copy-of'),
+    );
     console.log("Found", copyOfElements.length, "xsl:copy-of elements");
     console.log("Skipping all xsl:copy-of elements - not supported in visual mapper (TIBCO-style behavior)");
     
@@ -428,10 +429,10 @@ ${elementsXML}
     // So we skip all copy-of elements
 
     // Find all xsl:template elements
-    const templateElements = [
-      ...Array.from(xmlDoc.querySelectorAll('template')),
-      ...this.getElementsByLocalName(xmlDoc, 'template')
-    ];
+    const templateElements = this.getUniqueElements(
+      Array.from(xmlDoc.querySelectorAll('template')),
+      this.getElementsByLocalName(xmlDoc, 'template'),
+    );
     console.log("Found", templateElements.length, "xsl:template elements");
     console.log("Skipping template matches - they define structure, not field mappings (TIBCO-style behavior)");
     
@@ -442,6 +443,21 @@ ${elementsXML}
     console.log("========================================");
 
     return mappings;
+  }
+
+  private getUniqueElements(...groups: Element[][]): Element[] {
+    const seen = new Set<Element>();
+    const result: Element[] = [];
+    for (const group of groups) {
+      for (const element of group) {
+        if (seen.has(element)) {
+          continue;
+        }
+        seen.add(element);
+        result.push(element);
+      }
+    }
+    return result;
   }
 
   private isInsideConditional(element: Element): boolean {
