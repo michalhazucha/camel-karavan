@@ -3,6 +3,45 @@ import { MappingTransformationType, type IXSDNode } from "../../../types.js";
 
 export class XSLTGenerator {
   private variables: Map<string, string> = new Map();
+  
+  private isPseudoSegment(segment: string): boolean {
+    return /^\[.*\]$/.test(segment.trim());
+  }
+
+  private sanitizeXmlName(name: string): string {
+    const trimmed = name.trim();
+    if (!trimmed || this.isPseudoSegment(trimmed)) {
+      return "";
+    }
+    const cleaned = trimmed
+      .replace(/\s+/g, "_")
+      .replace(/[^A-Za-z0-9_.:-]/g, "_");
+    if (!cleaned) {
+      return "";
+    }
+    if (/^[0-9.-]/.test(cleaned)) {
+      return `n_${cleaned}`;
+    }
+    return cleaned;
+  }
+
+  private normalizePath(path: string): string {
+    return path
+      .split("/")
+      .map(part => part.trim())
+      .filter(part => part.length > 0 && !this.isPseudoSegment(part))
+      .join("/");
+  }
+
+  private resolveTargetElementName(node: IXSDNode): string {
+    const pathParts = node.path.split("/").filter(Boolean);
+    const pathLeaf = pathParts.length > 0 ? pathParts[pathParts.length - 1] : "";
+    const fromPath = this.sanitizeXmlName(pathLeaf);
+    if (fromPath) {
+      return fromPath;
+    }
+    return this.sanitizeXmlName(node.name);
+  }
 
   generate(
     connections: any[],
@@ -61,9 +100,10 @@ ${this.generateVariables(connections, 2)}
     const mappingsByTarget = new Map<string, any[]>();
 
     connections.forEach((conn) => {
-      const existing = mappingsByTarget.get(conn.targetPath) || [];
+      const normalizedTargetPath = this.normalizePath(conn.targetPath ?? "");
+      const existing = mappingsByTarget.get(normalizedTargetPath) || [];
       existing.push(conn);
-      mappingsByTarget.set(conn.targetPath, existing);
+      mappingsByTarget.set(normalizedTargetPath, existing);
     });
 
     // Build from the first real target node (skip wrapper nodes like "TargetSchema")
@@ -86,7 +126,10 @@ ${this.generateVariables(connections, 2)}
     let result = "";
 
     nodes.forEach((node) => {
-      const connections = mappings.get(node.path);
+      const elementName = this.resolveTargetElementName(node);
+      const normalizedNodePath = this.normalizePath(node.path);
+      const nodeLeaf = normalizedNodePath.split("/").filter(Boolean).pop() ?? "";
+      const connections = mappings.get(normalizedNodePath) || mappings.get(nodeLeaf);
 
       if (connections && connections.length > 0) {
         // This node has a mapping
@@ -94,28 +137,35 @@ ${this.generateVariables(connections, 2)}
         
         // Check if this mapping has a condition
         if (conn.transformation?.type === 'conditional') {
-          result += this.generateConditionalMapping(conn, node, indent);
+          result += this.generateConditionalMapping(conn, elementName, indent);
         } else {
-          result += this.generateSimpleMapping(conn, node, indent);
+          result += this.generateSimpleMapping(conn, elementName, indent);
         }
       } else if (node.children && node.children.length > 0) {
         // This node has children, recurse
-        result += `${indent}<${node.name}>\n`;
-        result += this.buildTargetStructure(node.children, mappings, indentLevel + 1, false);
-        result += `${indent}</${node.name}>\n`;
+        if (elementName) {
+          result += `${indent}<${elementName}>\n`;
+          result += this.buildTargetStructure(node.children, mappings, indentLevel + 1, false);
+          result += `${indent}</${elementName}>\n`;
+        } else {
+          result += this.buildTargetStructure(node.children, mappings, indentLevel, false);
+        }
       }
     });
 
     return result;
   }
 
-  private generateSimpleMapping(conn: any, node: IXSDNode, indent: string): string {
+  private generateSimpleMapping(conn: any, targetElementName: string, indent: string): string {
+    if (!targetElementName) {
+      return "";
+    }
     const transformation = conn.transformation;
-    let result = `${indent}<${node.name}>\n`;
+    let result = `${indent}<${targetElementName}>\n`;
     
     if (!transformation || transformation.type === MappingTransformationType.DIRECT) {
       // Simple direct mapping
-      result += `${indent}  <xsl:value-of select="${conn.sourcePath}"/>\n`;
+      result += `${indent}  <xsl:value-of select="${this.normalizePath(conn.sourcePath)}"/>\n`;
     } else if (transformation.type === MappingTransformationType.CONCAT && transformation.parts) {
       // Concatenation
       result += `${indent}  <xsl:value-of select="concat(${this.buildConcatArgs(transformation.parts)})"/>\n`;
@@ -127,22 +177,22 @@ ${this.generateVariables(connections, 2)}
       result += `${indent}  <xsl:value-of select="$${transformation.variableName}"/>\n`;
     }
     
-    result += `${indent}</${node.name}>\n`;
+    result += `${indent}</${targetElementName}>\n`;
     return result;
   }
 
-  private generateConditionalMapping(conn: any, node: IXSDNode, indent: string): string {
+  private generateConditionalMapping(conn: any, targetElementName: string, indent: string): string {
     const transformation = conn.transformation;
-    if (!transformation || !transformation.condition) {return "";}
+    if (!transformation || !transformation.condition || !targetElementName) {return "";}
     
     let result = `${indent}<xsl:if test="${transformation.condition}">\n`;
-    result += `${indent}  <${node.name}>\n`;
+    result += `${indent}  <${targetElementName}>\n`;
     
     if (transformation.thenValue) {
       result += `${indent}    <xsl:value-of select="${transformation.thenValue}"/>\n`;
     }
     
-    result += `${indent}  </${node.name}>\n`;
+    result += `${indent}  </${targetElementName}>\n`;
     result += `${indent}</xsl:if>\n`;
     
     return result;

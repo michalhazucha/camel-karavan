@@ -3,6 +3,7 @@
 import type { IMappingConnection, IXSDNode, IXSLTMapping } from "../../types.js";
 import { MappingTransformationType, TransformationTypes } from "../../types.js";
 export class XSLTParser {
+  private static readonly XSLT_NS = "http://www.w3.org/1999/XSL/Transform";
   private namespaceMap: Map<string, string> = new Map();
   private parameters: Set<string> = new Set();
 //TODO: FIXNUTÉ NAMESPACES! DONE
@@ -490,6 +491,7 @@ ${elementsXML}
     while (current) {
       const localName = current.localName;
       const tagName = current.tagName;
+      const isXsltInstruction = current.namespaceURI === XSLTParser.XSLT_NS;
 
       // Look for element creation tags
       if (localName === "element") {
@@ -502,12 +504,7 @@ ${elementsXML}
         if (name) {
           pathParts.unshift(`@${name}`);
         }
-      } else if (
-        !localName?.startsWith("xsl:") &&
-        localName !== "stylesheet" &&
-        localName !== "transform" &&
-        localName !== "template"
-      ) {
+      } else if (!isXsltInstruction) {
         // Regular XML element (not XSL instruction)
         // Preserve namespace prefix info for debugging but use clean name in path
         if (tagName.includes(":")) {
