@@ -74,9 +74,25 @@ export function TransformationDialog({
   )
 
   useEffect(() => {
+    if (!open) {
+      return
+    }
     setTransformationType(currentTransformation?.type || MappingTransformationType.DIRECT)
     setExpression(currentTransformation?.customXPath || sourcePath)
-  },[currentTransformation.type,expression,condition,variableName,variableExpression,variablePosition])
+    setCondition(currentTransformation?.condition || "")
+    setVariableName(currentTransformation?.variableName || "")
+    setVariableExpression(currentTransformation?.variableExpression || "")
+    setVariablePosition(currentTransformation?.variablePosition)
+    setOuterElement(currentTransformation?.nestedStructure?.outerElement || "")
+    setInnerElement(currentTransformation?.nestedStructure?.innerElement || "")
+    setNestedVariableName(currentTransformation?.nestedStructure?.variableName || "")
+    setNestedVariableExpression(currentTransformation?.nestedStructure?.variableExpression || "")
+    setValueExpression(currentTransformation?.nestedStructure?.valueExpression || "")
+    setSourceVariable(currentTransformation?.sourceVariable || "Start")
+    setCopyNilAttributes(currentTransformation?.copyNilAttributes || false)
+    setAddConditionalWrapper(currentTransformation?.addConditionalWrapper || false)
+    setHardcodedValue(currentTransformation?.hardcodedValue || "")
+  }, [open, currentTransformation, sourcePath])
   // For nested structure
   const [outerElement, setOuterElement] = useState(
     currentTransformation?.nestedStructure?.outerElement || ""
@@ -226,15 +242,15 @@ export function TransformationDialog({
   const hardcodedValueSetter =(e:ChangeEvent<HTMLInputElement>) =>{ setHardcodedValue(e.target.value)}
   return (
     <Dialog open={open} onOpenChange={onOpenChange} >
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-zinc-550 text-zinc-100 border-zinc-800">
         <DialogHeader className="space-y-2">
-          <DialogTitle>Configure Transformation</DialogTitle>
-          <DialogDescription className="space-y-1">
+          <DialogTitle className="text-zinc-100">Configure Transformation</DialogTitle>
+          <DialogDescription className="space-y-1 text-zinc-300">
             <div className="break-words">
-              Source: <code className="text-sm bg-muted px-1 py-0.5 rounded break-all">{sourcePath}</code>
+              Source: <code className="text-sm bg-zinc-500 text-zinc-100 px-1 py-0.5 rounded break-all">{sourcePath}</code>
             </div>
             <div className="break-words">
-              Target: <code className="text-sm bg-muted px-1 py-0.5 rounded break-all">{targetPath}</code>
+              Target: <code className="text-sm bg-zinc-500 text-zinc-100 px-1 py-0.5 rounded break-all">{targetPath}</code>
             </div>
           </DialogDescription>
         </DialogHeader>
@@ -449,7 +465,7 @@ export function TransformationDialog({
                 />
                 <Label htmlFor="addConditionalWrapper" className="cursor-pointer">
                   Wrap optional elements in &lt;xsl:if&gt;
-                </Label>
+                </Label>concat(order/customer/firstName, ' ', order/customer/lastNam
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="hardcodedValue">Hardcoded Value (optional)</Label>

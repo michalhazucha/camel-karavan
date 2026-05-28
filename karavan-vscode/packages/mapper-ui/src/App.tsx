@@ -508,6 +508,9 @@ function App({ host }: AppProps) {
   const handleSaveTransformation = (transformation: IMappingTransformation) => {
     if (!editingConnection) return
 
+    // Transformation changed; do not reuse previously loaded XSLT snapshot.
+    setOriginalLoadedXSLT(null)
+
     const updatedConnection = {
       ...editingConnection,
       transformation,

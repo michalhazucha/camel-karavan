@@ -77,6 +77,7 @@ export class XSLTParser {
       'substring-before(',
       'substring-after(',
       'string-length(',
+      'string(',
       'normalize-space(',
       'translate(',
       'contains(',
@@ -85,6 +86,11 @@ export class XSLTParser {
       'replace(',
       'tokenize(',
       'format-number(',
+      'upper-case(',
+      'lower-case(',
+      'number(',
+      'boolean(',
+      'not(',
       'round(',
       'ceiling(',
       'floor(',
@@ -96,6 +102,14 @@ export class XSLTParser {
     ];
 
     if (functionPatterns.some(pattern => trimmed.includes(pattern))) {
+      return MappingTransformationType.FUNCTION;
+    }
+
+    // Generic XPath/XSLT function detection:
+    // namespace:function(...) or function(...)
+    // but avoid classifying plain paths like order/orderId as function.
+    const genericFunctionCall = /(?:^|[\s(,+\-*/])(?:[A-Za-z_][\w.-]*:)?[A-Za-z_][\w.-]*\s*\(/;
+    if (genericFunctionCall.test(trimmed)) {
       return MappingTransformationType.FUNCTION;
     }
 

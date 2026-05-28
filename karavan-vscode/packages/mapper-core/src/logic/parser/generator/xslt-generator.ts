@@ -161,20 +161,27 @@ ${this.generateVariables(connections, 2)}
       return "";
     }
     const transformation = conn.transformation;
+    const fallbackExpression = (conn.sourcePath ?? "").trim();
     let result = `${indent}<${targetElementName}>\n`;
     
     if (!transformation || transformation.type === MappingTransformationType.DIRECT) {
       // Simple direct mapping
-      result += `${indent}  <xsl:value-of select="${this.normalizePath(conn.sourcePath)}"/>\n`;
+      result += `${indent}  <xsl:value-of select="${this.normalizePath(fallbackExpression)}"/>\n`;
     } else if (transformation.type === MappingTransformationType.CONCAT && transformation.parts) {
       // Concatenation
       result += `${indent}  <xsl:value-of select="concat(${this.buildConcatArgs(transformation.parts)})"/>\n`;
+    } else if (transformation.type === MappingTransformationType.CONCAT && transformation.customXPath) {
+      // Concatenation entered as raw XPath expression
+      result += `${indent}  <xsl:value-of select="${transformation.customXPath}"/>\n`;
     } else if (transformation.type === MappingTransformationType.FUNCTION && transformation.customXPath) {
       // Custom function or XPath
       result += `${indent}  <xsl:value-of select="${transformation.customXPath}"/>\n`;
     } else if (transformation.type === MappingTransformationType.VARIABLE && transformation.variableName) {
       // Use a variable
       result += `${indent}  <xsl:value-of select="$${transformation.variableName}"/>\n`;
+    } else if (fallbackExpression) {
+      // Keep mapping renderable even when transformation payload is partial.
+      result += `${indent}  <xsl:value-of select="${this.normalizePath(fallbackExpression)}"/>\n`;
     }
     
     result += `${indent}</${targetElementName}>\n`;
