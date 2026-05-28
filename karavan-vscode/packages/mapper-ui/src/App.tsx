@@ -777,20 +777,21 @@ function App({ host }: AppProps) {
     disabled: !isKaravanEmbedded,
     hidden: !isKaravanEmbedded,
   },
-  {
-    variant: ButtonVariant.Outline,
-    icon: <LuSave className="h-4 w-4 mr-2" />,
-    label: 'Save project ',
-    method: handleSaveProject,
-    disabled: !project.sourceSchema || !project.targetSchema
-  },
-  {
-    variant: ButtonVariant.Outline,
-    icon: <LuFolderOpen className="h-4 w-4 mr-2" />,
-    label: 'Load project',
-    method: handleLoadExistingProject,
-    disabled: false
-  },
+  // TIBCO-style mapper flow does not use custom "project file" save/load actions.
+  // {
+  //   variant: ButtonVariant.Outline,
+  //   icon: <LuSave className="h-4 w-4 mr-2" />,
+  //   label: 'Save project ',
+  //   method: handleSaveProject,
+  //   disabled: !project.sourceSchema || !project.targetSchema
+  // },
+  // {
+  //   variant: ButtonVariant.Outline,
+  //   icon: <LuFolderOpen className="h-4 w-4 mr-2" />,
+  //   label: 'Load project',
+  //   method: handleLoadExistingProject,
+  //   disabled: false
+  // },
   {
     variant: ButtonVariant.Outline,
     icon: <LuWorkflow className="h-4 w-4 mr-2" />,
