@@ -195,8 +195,12 @@ ${this.generateVariables(connections, 2)}
     let result = `${indent}<xsl:if test="${transformation.condition}">\n`;
     result += `${indent}  <${targetElementName}>\n`;
     
-    if (transformation.thenValue) {
-      result += `${indent}    <xsl:value-of select="${transformation.thenValue}"/>\n`;
+    const thenExpression =
+      transformation.thenValue ||
+      transformation.customXPath ||
+      (conn.sourcePath ?? "").trim();
+    if (thenExpression) {
+      result += `${indent}    <xsl:value-of select="${thenExpression}"/>\n`;
     }
     
     result += `${indent}  </${targetElementName}>\n`;

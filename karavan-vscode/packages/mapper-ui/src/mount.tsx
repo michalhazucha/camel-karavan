@@ -6,7 +6,7 @@ import type { KaravanMapperHost } from "./karavan-host";
 
 let root: Root | null = null;
 
-export const mountKaravanMapper = (container: HTMLElement, host: KaravanMapperHost): void => {
+export const mountKaravanMapper = (container: HTMLElement, host?: KaravanMapperHost): void => {
     container.classList.add("karavan-mapper-root", "dark");
     root?.unmount();
     root = createRoot(container);

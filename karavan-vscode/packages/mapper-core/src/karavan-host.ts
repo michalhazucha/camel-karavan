@@ -27,6 +27,11 @@ export interface KaravanMapperHost {
     getContext(): KaravanMapperContext | null;
     /** Cached workspace file text (e.g. from a prior read in this VS Code session). */
     getCachedWorkspaceFile?(relativePath: string): string | undefined;
+    notifySelectionState?(payload: {
+        selectedSourcePath?: string;
+        selectedTargetPath?: string;
+        connections?: unknown[];
+    }): void;
     pickWorkspaceFile(role: "source" | "target" | "xslt", extensions: string[]): void;
     openXsltInEditor(content: string): void;
     saveToActivity(payload: KaravanMapperSavePayload): void;

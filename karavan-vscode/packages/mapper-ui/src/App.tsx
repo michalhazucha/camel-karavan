@@ -15,28 +15,27 @@ import { MappedNodeIDs, tabs, ViewMode } from "./lib/constants";
 import { XSLTGenerator, XSDParser, XSLTParser } from "@karavan/mapper-core";
 import { connectionColors } from "./lib/variables";
 import type { KaravanMapperHost } from "./karavan-host";
+import { getVsCodeApi } from "./vscode-api";
 
-
-declare const acquireVsCodeApi: () => {
-  postMessage: (message: any) => void;
-};
-
-const createStandaloneVsCodeApi = () => ({
-  postMessage: (message: any) => {
-    console.log("VSCode message:", message);
-  },
-});
+declare global {
+  interface Window {
+    __KARAVAN_MAPPER_MODE?: "full" | "selection-panel";
+    __KARAVAN_MAPPER_ROLE?: "primary" | "secondary";
+  }
+}
 
 interface AppProps {
   host?: KaravanMapperHost;
 }
 
 function App({ host }: AppProps) {
-  const isKaravanEmbedded = Boolean(host);
-  const vscode: { postMessage: (message: unknown) => void } =
-    typeof acquireVsCodeApi === "function" && !host
-      ? acquireVsCodeApi()
-      : createStandaloneVsCodeApi();
+  const isSelectionPanelMode = window.__KARAVAN_MAPPER_MODE === "selection-panel";
+  const isSecondaryPanel = window.__KARAVAN_MAPPER_ROLE === "secondary";
+  const isKaravanEmbedded = Boolean(host) && !isSecondaryPanel;
+  const vscode =
+    !host || isSecondaryPanel
+      ? getVsCodeApi()
+      : { postMessage: (_message: unknown) => undefined };
   const xsltParser = new XSLTParser();
   const parser = new XSDParser()
   const generator = new XSLTGenerator()
@@ -63,12 +62,18 @@ function App({ host }: AppProps) {
   const [xsltMappings, setXsltMappings] = useState<Array<{
     sourcePath: string
     targetPath: string
+    expression?: string
     isConditional?: boolean
     condition?: string
   }>
   >([])
   const [originalLoadedXSLT, setOriginalLoadedXSLT] = useState<string | null>(null)
   const [activeSchemaPaths, setActiveSchemaPaths] = useState<{ source?: string; target?: string }>({})
+  /** Selection paths mirrored from the primary mapper (bottom panel has no XSD trees). */
+  const [syncedSelectionPaths, setSyncedSelectionPaths] = useState<{
+    source?: string;
+    target?: string;
+  }>({})
   const pendingXsltRef = useRef<string | null>(null)
   const schemasAwaitingXsltRef = useRef(false)
 
@@ -85,6 +90,58 @@ function App({ host }: AppProps) {
     )
 
   const [sheetOpen, setSheetOpen] = useState(false)
+
+  const findNodeByPath = (nodes: IXSDNode[] | undefined, nodePath?: string): IXSDNode | null => {
+    if (!nodes || !nodePath) {
+      return null;
+    }
+    for (const node of nodes) {
+      if (node.path === nodePath) {
+        return node;
+      }
+      const nested = findNodeByPath(node.children, nodePath);
+      if (nested) {
+        return nested;
+      }
+    }
+    return null;
+  };
+
+  const publishSelectionState = () => {
+    if (isSecondaryPanel) {
+      return;
+    }
+    const serializedConnections = project.connections.map((connection) => ({
+      id: connection.id,
+      sourcePath: connection.sourcePath,
+      targetPath: connection.targetPath,
+      sourceId: connection.sourceId,
+      targetId: connection.targetId,
+      type: connection.type,
+      transformation: connection.transformation,
+    }));
+    const payload = {
+      selectedSourcePath: selectedSource?.path,
+      selectedTargetPath: selectedTarget?.path,
+      connections: serializedConnections,
+    };
+    const hostWithSelectionSync = host as AppProps["host"] & {
+      notifySelectionState?: (state: {
+        selectedSourcePath?: string;
+        selectedTargetPath?: string;
+        connections?: unknown[];
+      }) => void;
+    };
+    if (hostWithSelectionSync?.notifySelectionState) {
+      hostWithSelectionSync.notifySelectionState(payload);
+    } else {
+      vscode.postMessage({
+        command: "mapperSelectionState",
+        type: "mapperSelectionState",
+        payload,
+      });
+    }
+  };
   useEffect(() => {
     if (!host) {
       return;
@@ -145,6 +202,7 @@ function App({ host }: AppProps) {
         if (event.context.xslt) {
           setGeneratedXSLT(event.context.xslt);
           setShowXSLT(true);
+          void applyXsltContent(event.context.xslt);
         }
       }
     });
@@ -176,6 +234,7 @@ function App({ host }: AppProps) {
         mappings.map((m) => ({
           sourcePath: m.sourcePath,
           targetPath: m.targetPath,
+          expression: m.expression,
           isConditional: m.isConditional,
           condition: m.condition,
         })),
@@ -315,11 +374,117 @@ function App({ host }: AppProps) {
         } catch (error) {
           console.error("❌ Error parsing updated XSLT:", error);
         }
+      } else if (event.data?.type === "mapperSelectionStateSync") {
+        if (transformationDialogOpen) {
+          return;
+        }
+        const payload = event.data.payload as {
+          selectedSourcePath?: string;
+          selectedTargetPath?: string;
+          connections?: IMappingConnection[];
+        } | undefined;
+        if (!payload) {
+          return;
+        }
+        if (isSecondaryPanel) {
+          setSyncedSelectionPaths((prev) => ({
+            source:
+              payload.selectedSourcePath !== undefined
+                ? payload.selectedSourcePath
+                : prev.source,
+            target:
+              payload.selectedTargetPath !== undefined
+                ? payload.selectedTargetPath
+                : prev.target,
+          }));
+        } else {
+          setSelectedSource((prev) => {
+            if (payload.selectedSourcePath === undefined) {
+              return prev;
+            }
+            if (!payload.selectedSourcePath) {
+              return null;
+            }
+            return (
+              findNodeByPath(project.sourceSchema?.nodes, payload.selectedSourcePath) ?? prev
+            );
+          });
+          setSelectedTarget((prev) => {
+            if (payload.selectedTargetPath === undefined) {
+              return prev;
+            }
+            if (!payload.selectedTargetPath) {
+              return null;
+            }
+            return (
+              findNodeByPath(project.targetSchema?.nodes, payload.selectedTargetPath) ?? prev
+            );
+          });
+        }
+        if (Array.isArray(payload.connections)) {
+          const syncedConnections = payload.connections as IMappingConnection[];
+          setProject((prev) => ({ ...prev, connections: syncedConnections }));
+        }
+      } else if (event.data?.type === "mapperSelectionAction") {
+        const action = event.data.action as string | undefined;
+        if (!action) {
+          return;
+        }
+        if (action === "createMapping") {
+          handleCreateMapping();
+        } else if (action === "deleteAllMappings") {
+          handleDeleteAllMappings();
+        } else if (action === "deleteMapping" && typeof event.data.connectionId === "string") {
+          handleDeleteMapping(event.data.connectionId);
+        } else if (action === "editMapping" && typeof event.data.connectionId === "string") {
+          const connection = project.connections.find((conn) => conn.id === event.data.connectionId);
+          if (connection) {
+            handleEditTransformation(connection);
+          }
+        } else if (
+          action === "saveConnectionTransformation" &&
+          typeof event.data.connectionId === "string" &&
+          event.data.transformation
+        ) {
+          applyConnectionTransformation(
+            event.data.connectionId,
+            event.data.transformation as IMappingTransformation,
+          );
+        }
+      } else if (event.data?.command === "requestMapperSelectionState") {
+        publishSelectionState();
       }
     }
     window.addEventListener("message", handler)
     return () => window.removeEventListener("message", handler)
-  }, [])
+  }, [
+    project.connections,
+    project.sourceSchema,
+    project.targetSchema,
+    selectedSource,
+    selectedTarget,
+    transformationDialogOpen,
+  ])
+
+  useEffect(() => {
+    if (transformationDialogOpen) {
+      return;
+    }
+    publishSelectionState();
+  }, [
+    host,
+    isSecondaryPanel,
+    project.connections,
+    selectedSource?.path,
+    selectedTarget?.path,
+    transformationDialogOpen,
+  ])
+
+  useEffect(() => {
+    if (isSecondaryPanel) {
+      vscode.postMessage({ command: "selectionPanelReady" });
+    }
+  }, [isSecondaryPanel, vscode]);
 
   //TODO: SOLVE IMPORT XSD TO XSD AND REFERENCE CALLING. HOW TO DO STRUCTURE TO MAKE IT ALL WORK. IS IT POSSIBLE TO CREATE PROJECT WORKSPACE WHERE WILL BE ALL XSDS RELATED AND THEN CONNECT THE IMPORT
   //TODO: FIX THE PREVIEW IN ANOTHER TAB AND CHANGE. DO SOMETHING LIKE PRESAVE AS XSLT THEN UPDATE IT AND THEN ON SAVE REFRESH THE WINDOW WITH IMPORTED AND SHOW CHANGED XSLT MAPPING - WORKS NOW, Better to refactor. Right now saves temp file to extension temp folder
@@ -505,43 +670,62 @@ function App({ host }: AppProps) {
     input.click()
   }
 
+  const applyConnectionTransformation = (
+    connectionId: string,
+    transformation: IMappingTransformation,
+  ) => {
+    setOriginalLoadedXSLT(null);
+    setGeneratedXSLT("");
+    setShowXSLT(false);
+
+    const existingIndex = project.connections.findIndex((c) => c.id === connectionId);
+    if (existingIndex < 0) {
+      return;
+    }
+
+    setProject((prev) => ({
+      ...prev,
+      connections: prev.connections.map((c) =>
+        c.id === connectionId
+          ? { ...c, transformation, type: transformation.type }
+          : c,
+      ),
+    }));
+  };
+
   const handleSaveTransformation = (transformation: IMappingTransformation) => {
     if (!editingConnection) return
 
-    // Transformation changed; do not reuse previously loaded XSLT snapshot.
-    setOriginalLoadedXSLT(null)
+    applyConnectionTransformation(editingConnection.id, transformation);
 
-    const updatedConnection = {
-      ...editingConnection,
-      transformation,
-    }
-
-    // Check if this is a new connection or updating existing
-    const existingIndex = project.connections.findIndex((c) => c.id === editingConnection.id)
-
-    if (existingIndex >= 0) {
-      // Update existing connection
+    const existingIndex = project.connections.findIndex((c) => c.id === editingConnection.id);
+    if (existingIndex < 0) {
       setProject((prev) => ({
         ...prev,
-        connections: prev.connections.map((c) =>
-          c.id === editingConnection.id ? updatedConnection : c
-        ),
-      }))
-    } else {
-      // Add new connection
-      setProject((prev) => ({
-        ...prev,
-        connections: [...prev.connections, { ...updatedConnection, type: updatedConnection.transformation?.type || MappingTransformationType.DIRECT }],
-      }))
+        connections: [
+          ...prev.connections,
+          {
+            ...editingConnection,
+            transformation,
+            type: transformation.type,
+          },
+        ],
+      }));
     }
 
     setSelectedSource(null)
     setSelectedTarget(null)
     setEditingConnection(null)
+    setTransformationDialogOpen(false)
   }
 
   const handleEditTransformation = (connection: IMappingConnection) => {
-    setEditingConnection(connection)
+    setEditingConnection({
+      ...connection,
+      transformation: connection.transformation
+        ? { ...connection.transformation }
+        : { type: MappingTransformationType.DIRECT, customXPath: connection.sourcePath },
+    })
     setTransformationDialogOpen(true)
   }
 
@@ -549,24 +733,6 @@ function App({ host }: AppProps) {
     if (!project.sourceSchema || !project.targetSchema) {
       alert("Please load both source and target schemas")
       return
-    }
-
-    // If we have an original loaded XSLT and connections haven't changed, use the original
-    if (originalLoadedXSLT && project.connections.length === xsltMappings.length) {
-      // Check if mappings are the same (not modified)
-      const mappingsUnchanged = project.connections.every((conn, index) => {
-        const originalMapping = xsltMappings[index]
-        return originalMapping &&
-          conn.sourcePath === originalMapping.sourcePath &&
-          conn.targetPath === originalMapping.targetPath
-      })
-
-      if (mappingsUnchanged) {
-        console.log("Using original loaded XSLT (no changes detected)")
-        setGeneratedXSLT(originalLoadedXSLT)
-        setShowXSLT(true)
-        return
-      }
     }
 
     // Generate new XSLT from mappings
@@ -582,6 +748,10 @@ function App({ host }: AppProps) {
   }
 
   const handleDeleteMapping = (connectionId: string) => {
+    if (isSelectionPanelMode && isSecondaryPanel) {
+      vscode.postMessage({ type: "mapperSelectionAction", action: "deleteMapping", connectionId });
+      return;
+    }
     setOriginalLoadedXSLT(null) // Mappings changed, clear original
     setProject((prev) => ({
       ...prev,
@@ -590,6 +760,10 @@ function App({ host }: AppProps) {
   }
 
   const handleDeleteAllMappings = () => {
+    if (isSelectionPanelMode && isSecondaryPanel) {
+      vscode.postMessage({ type: "mapperSelectionAction", action: "deleteAllMappings" });
+      return;
+    }
     setOriginalLoadedXSLT(null) // Mappings changed, clear original
     setProject((prev) => ({
       ...prev,
@@ -718,17 +892,19 @@ function App({ host }: AppProps) {
     if (!host) {
       return;
     }
-    let xslt = generatedXSLT;
-    if (!xslt && project.sourceSchema && project.targetSchema) {
-      xslt = generator.generate(
-        project.connections as any,
-        project.targetSchema.nodes as any,
-        project.sourceSchema.targetNamespace,
-        project.targetSchema.targetNamespace,
-      );
-      setGeneratedXSLT(xslt);
-      setShowXSLT(true);
+    if (!project.sourceSchema || !project.targetSchema) {
+      alert("Please load both source and target schemas before saving.");
+      return;
     }
+    const xslt = generator.generate(
+      project.connections as any,
+      project.targetSchema.nodes as any,
+      project.sourceSchema.targetNamespace,
+      project.targetSchema.targetNamespace,
+    );
+    setGeneratedXSLT(xslt);
+    setShowXSLT(true);
+    setOriginalLoadedXSLT(null);
     if (!xslt?.trim()) {
       alert("Generate or load XSLT before saving to the activity.");
       return;
@@ -813,6 +989,111 @@ function App({ host }: AppProps) {
     method: () => handleResetMappings(),
     disabled: false
   }]
+
+  const displayedSourcePath = isSecondaryPanel
+    ? syncedSelectionPaths.source
+    : selectedSource?.path;
+  const displayedTargetPath = isSecondaryPanel
+    ? syncedSelectionPaths.target
+    : selectedTarget?.path;
+  const canCreateMapping = Boolean(displayedSourcePath && displayedTargetPath);
+
+  const MappingControls = (
+    <Card className={isSelectionPanelMode ? "p-4" : "mt-6 p-4"}>
+      <div className="flex items-center justify-between">
+        <div className="flex-1">
+          <h3 className="font-semibold mb-2">Current Selection</h3>
+          <div className="grid grid-cols-2 gap-4 text-base">
+            <div>
+              <span className="text-muted-foreground">Source: </span>
+              <span className="font-mono">{displayedSourcePath || "None"}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Target: </span>
+              <span className="font-mono">{displayedTargetPath || "None"}</span>
+            </div>
+          </div>
+        </div>
+        <span className="flex flex-row gap-2">
+          <Button onClick={() => {
+            if (isSelectionPanelMode && isSecondaryPanel) {
+              vscode.postMessage({ type: "mapperSelectionAction", action: "createMapping" });
+              return;
+            }
+            handleCreateMapping();
+          }} disabled={!canCreateMapping} className="cursor-pointer">
+            Create Mapping
+          </Button>
+          <Button onClick={handleDeleteAllMappings} disabled={project.connections.length === 0} variant={ButtonVariant.Outline} className="cursor-pointer">
+            <LuTrash2 className="h-4 w-4 mr-2" /> Delete All Mappings
+          </Button>
+        </span>
+      </div>
+
+      <div className="mt-4">
+        <h3 className="font-semibold mb-2">Mappings ({project.connections.length})</h3>
+        <div className="space-y-1 max-h-32 overflow-auto">
+          {project.connections.map((conn) => {
+            const color = getConnectionColor(conn.id)
+            return (
+              <div
+                key={conn.id}
+                className="text-base font-mono p-2 rounded flex items-center justify-between gap-2 w-full text-start hover:scale-101 duration-300 ease-in-out transition-transform shadow-sm"
+                style={{ backgroundColor: `color-mix(in oklch, ${color} 15%, transparent)` }}
+              >
+                <span className="flex-1 truncate">
+                  <span className="font-semibold">{conn.sourcePath}</span> → <span className="font-semibold">{conn.targetPath}</span>
+                  {conn.transformation && (
+                    <span className="ml-2 text-sm text-blue-600 dark:text-blue-400">
+                      [{conn.transformation?.type}]
+                    </span>
+                  )}
+                </span>
+                <div className="flex gap-1">
+                  <Button
+                    className="cursor-pointer"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      if (isSelectionPanelMode && isSecondaryPanel) {
+                        vscode.postMessage({
+                          type: "mapperSelectionAction",
+                          action: "editMapping",
+                          connectionId: conn.id,
+                        });
+                        return;
+                      }
+                      handleEditTransformation(conn);
+                    }}
+                    title="Edit transformation"
+                  >
+                    <LuSettings2 className="h-3 w-3" />
+                  </Button>
+                  <Button
+                    className="cursor-pointer"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => handleDeleteMapping(conn.id)}
+                    title="Delete mapping"
+                  >
+                    <LuTrash2 className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </Card>
+  );
+
+  if (isSelectionPanelMode) {
+    return (
+      <div className="min-h-full bg-background px-3 py-3">
+        {MappingControls}
+      </div>
+    );
+  }
   // Get connection targets map (sourceId -> array of targetIds)
   return (
     <div className={isKaravanEmbedded ? "min-h-full bg-background" : "min-h-screen bg-background"}>
@@ -883,7 +1164,7 @@ function App({ host }: AppProps) {
                 containerRef={treeContainerRef}
                 getConnectionColor={getConnectionColor}
               />
-              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                 {/* Source Schema */}
                 <Card className="p-4">
                   <div className="flex items-center justify-between mb-4">
@@ -900,7 +1181,15 @@ function App({ host }: AppProps) {
                   </div>
                   <div className="border border-border rounded-md p-2 h-[600px] overflow-auto" ref={leftSchemaListRef}>
                     {project.sourceSchema && project.sourceSchema.nodes ? (
-                      <SchemaTree isTreeExpanded={treeExpanded} nodes={project.sourceSchema.nodes} onNodeClick={setSelectedSource} selectedNodeId={selectedSource?.id} side={MappedNodeIDs.Source} onDragStart={handleDragStart} mappedNodeIds={getMappedNodeIds(MappedNodeIDs.Source)} />
+                      <SchemaTree
+                        isTreeExpanded={treeExpanded}
+                        nodes={project.sourceSchema.nodes}
+                        onNodeClick={(node) => setSelectedSource(node)}
+                        selectedNodeId={selectedSource?.id}
+                        side={MappedNodeIDs.Source}
+                        onDragStart={handleDragStart}
+                        mappedNodeIds={getMappedNodeIds(MappedNodeIDs.Source)}
+                      />
                     ) : (
                       <div className="flex items-center justify-center h-full text-muted-foreground">
                         Load a source XSD schema
@@ -969,80 +1258,11 @@ function App({ host }: AppProps) {
           </TabsContent>
         </Tabs>
 
-        {/* Mapping Controls */}
-        <Card className="mt-6 p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex-1">
-              <h3 className="font-semibold mb-2">Current Selection</h3>
-              <div className="grid grid-cols-2 gap-4 text-base">
-                <div>
-                  <span className="text-muted-foreground">Source: </span>
-                  <span className="font-mono">{selectedSource?.path || "None"}</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Target: </span>
-                  <span className="font-mono">{selectedTarget?.path || "None"}</span>
-                </div>
-              </div>
-            </div>
-            <span className="flex flex-row gap-2">
-              <Button onClick={handleCreateMapping} disabled={!selectedSource || !selectedTarget} className="cursor-pointer">
-                Create Mapping
-              </Button>
-              <Button onClick={handleDeleteAllMappings} disabled={project.connections.length === 0} variant={ButtonVariant.Outline} className="cursor-pointer">
-                <LuTrash2 className="h-4 w-4 mr-2" /> Delete All Mappings
-              </Button>
-            </span>
-          </div>
-
-          <div className="mt-4">
-            <h3 className="font-semibold mb-2">Mappings ({project.connections.length})</h3>
-            <div className="space-y-1 max-h-32 overflow-auto">
-              {project.connections.map((conn) => {
-                const color = getConnectionColor(conn.id)
-                return (
-                  <div
-                    key={conn.id}
-                    className="text-base font-mono p-2 rounded flex items-center justify-between gap-2 w-full text-start hover:scale-101 duration-300 ease-in-out transition-transform shadow-sm"
-                    style={{ backgroundColor: `color-mix(in oklch, ${color} 15%, transparent)` }}
-                  >
-                    <span className="flex-1 truncate">
-                      <span className="font-semibold">{conn.sourcePath}</span> → <span className="font-semibold">{conn.targetPath}</span>
-                      {conn.transformation && (
-                        <span className="ml-2 text-sm text-blue-600 dark:text-blue-400">
-                          [{conn.transformation?.type}]
-                        </span>
-                      )}
-                    </span>
-                    <div className="flex gap-1">
-                      <Button
-                        className="cursor-pointer"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleEditTransformation(conn)}
-                        title="Edit transformation"
-                      >
-                        <LuSettings2 className="h-3 w-3" />
-                      </Button>
-                      <Button
-                        className="cursor-pointer"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleDeleteMapping(conn.id)}
-                        title="Delete mapping"
-                      >
-                        <LuTrash2 className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        </Card>
+        {/* Mapping controls live in the VS Code bottom panel when embedded in Karavan */}
+        {!isKaravanEmbedded && MappingControls}
 
         {/* XSLT Output */}
-        {showXSLT && (
+        {/* {showXSLT && (
           <Card className="mt-6 p-4 h-full">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold">Generated XSLT</h3>
@@ -1087,7 +1307,7 @@ function App({ host }: AppProps) {
               </Highlight>
             </div>
           </Card>
-        )}
+        )} */}
       </div>
 
       <SheetEditor sheetOpen={sheetOpen} title="XSLT Output">

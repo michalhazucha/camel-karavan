@@ -33,8 +33,10 @@ export function activate(context: ExtensionContext) {
     const rootPath = (workspace.workspaceFolders && (workspace.workspaceFolders.length > 0))
         ? workspace.workspaceFolders[0].uri.fsPath : undefined;
 
+    const xsltMapperView = new XsltMapperView(context);
+
     // Register views    
-    const designer = new DesignerView(context, rootPath);
+    const designer = new DesignerView(context, rootPath, xsltMapperView);
 
     const integrationView = new IntegrationView(designer, rootPath);
     window.registerTreeDataProvider('integrations', integrationView);
@@ -54,7 +56,7 @@ export function activate(context: ExtensionContext) {
     });
     context.subscriptions.push(topologyCommand);
 
-    const xsltMapperView = new XsltMapperView(context);
+    xsltMapperView.registerSelectionPanelProvider();
     const xsltMapperCommand = commands.registerCommand("karavan.xslt-mapper", async () => {
         await xsltMapperView.openKaravanWebView();
     });

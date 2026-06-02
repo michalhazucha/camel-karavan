@@ -25,7 +25,7 @@ import { commands, ExtensionContext, Uri, ViewColumn, WebviewPanel, WebviewPanel
 import { resolveStoredPath } from "./propertiesResolver";
 import * as utils from "./utils";
 import { getWebviewContent } from "./webviewContent";
-import { getEmbeddedMapperHtml, resolveXsltMapperBuildPath } from "./xsltMapperView";
+import { getEmbeddedMapperHtml, resolveXsltMapperBuildPath, XsltMapperView } from "./xsltMapperView";
 
 const KARAVAN_LOADED = "karavan:loaded";
 const KARAVAN_PANELS: Map<string, WebviewPanel> = new Map<string, WebviewPanel>();
@@ -34,7 +34,7 @@ export class DesignerView {
 
     private mapperPreviewFiles: Map<string, { filePath: string, watcher?: vscode.Disposable }> = new Map();
 
-    constructor(private context: ExtensionContext, private rootPath?: string) {
+    constructor(private context: ExtensionContext, private rootPath?: string, private xsltMapperView?: XsltMapperView) {
 
     }
     karavanOpen(fullPath: string, tab?: string) {
@@ -134,7 +134,14 @@ export class DesignerView {
             // Handle messages from the webview
             panel.webview.onDidReceiveMessage(
                 message => {
+                    if (message?.type === "mapperSelectionState") {
+                        this.xsltMapperView?.updateMapperSelectionState(message.payload ?? {});
+                        return;
+                    }
                     switch (message.command) {
+                        case 'mapperSelectionState':
+                            this.xsltMapperView?.updateMapperSelectionState(message.payload ?? {});
+                            break;
                         case 'save':
                             utils.save(message.relativePath, message.code);
                             break;
@@ -175,6 +182,12 @@ export class DesignerView {
                         case 'chooseMapperWorkspaceFile':
                             this.chooseMapperWorkspaceFile(panel, message.role, message.extensions);
                             break;
+                        case 'openMapperSelectionPanel':
+                            this.xsltMapperView?.setKaravanPrimaryWebview(panel.webview);
+                            this.xsltMapperView?.refreshSelectionPanel();
+                            panel.webview.postMessage({ command: 'requestMapperSelectionState' });
+                            commands.executeCommand("karavan.mapperSelectionPanel.focus");
+                            break;
                     }
                 },
                 undefined,
@@ -189,6 +202,7 @@ export class DesignerView {
                 }
                 this.mapperPreviewFiles.delete(relativePath);
                 KARAVAN_PANELS.delete(relativePath);
+                this.xsltMapperView?.setKaravanPrimaryWebview(undefined);
                 commands.executeCommand("setContext", KARAVAN_LOADED, false);
             }, null, this.context.subscriptions);
 

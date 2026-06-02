@@ -161,6 +161,14 @@ export const createKaravanMapperHost = (
         );
     },
 
+    notifySelectionState: (payload) => {
+        vscode?.postMessage({
+            command: "mapperSelectionState",
+            type: "mapperSelectionState",
+            payload,
+        });
+    },
+
     pickWorkspaceFile: (role, extensions) => {
         vscode?.postMessage({
             command: "chooseMapperWorkspaceFile",

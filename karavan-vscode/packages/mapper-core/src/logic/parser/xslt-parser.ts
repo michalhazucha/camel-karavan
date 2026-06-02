@@ -588,9 +588,26 @@ ${elementsXML}
         console.log(` ✓ Found target node: ${targetNode.id}`);
       }
 
-      // Detect transformation type from the expression
-      const transformationType = this.detectTransformationType(mapping.expression || mapping.sourcePath);
+      const transformationType = mapping.isConditional
+        ? MappingTransformationType.CONDITIONAL
+        : this.detectTransformationType(mapping.expression || mapping.sourcePath);
       console.log(` Detected transformation type: ${transformationType}`);
+
+      let transformation: IMappingConnection["transformation"];
+      if (mapping.isConditional && mapping.condition) {
+        const thenExpression = mapping.expression || mapping.sourcePath;
+        transformation = {
+          type: MappingTransformationType.CONDITIONAL,
+          condition: mapping.condition,
+          thenValue: thenExpression,
+          customXPath: thenExpression,
+        };
+      } else if (mapping.expression) {
+        transformation = {
+          type: transformationType,
+          customXPath: mapping.expression,
+        };
+      }
 
       const connection: IMappingConnection = {
         id: `xslt-conn-${index}`,
@@ -599,10 +616,7 @@ ${elementsXML}
         sourcePath: mapping.sourcePath,
         targetPath: mapping.targetPath,
         type: transformationType,
-        transformation: mapping.expression ? {
-          type: transformationType,
-          customXPath: mapping.expression
-        } : undefined
+        transformation,
       };
 
       connections.push(connection);

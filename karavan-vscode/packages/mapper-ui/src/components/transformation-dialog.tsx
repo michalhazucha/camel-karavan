@@ -21,7 +21,7 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import { MappingTransformationType, type IMappingTransformation } from "@/lib/types"
 
-import { useEffect, useState, type ChangeEvent } from "react"
+import { useEffect, useRef, useState, type ChangeEvent } from "react"
 
 interface TransformationDialogProps {
   open: boolean
@@ -73,8 +73,12 @@ export function TransformationDialog({
     currentTransformation.variablePosition
   )
 
+  const wasOpenRef = useRef(false)
+
   useEffect(() => {
-    if (!open) {
+    const justOpened = open && !wasOpenRef.current
+    wasOpenRef.current = open
+    if (!justOpened) {
       return
     }
     setTransformationType(currentTransformation?.type || MappingTransformationType.DIRECT)
@@ -295,7 +299,7 @@ export function TransformationDialog({
           )}
 
           {/* Conditional */}
-          {transformationType === "conditional" && (
+          {transformationType === MappingTransformationType.CONDITIONAL && (
             <>
               <div className="grid gap-2">
                 <Label htmlFor="condition">Condition (test)</Label>

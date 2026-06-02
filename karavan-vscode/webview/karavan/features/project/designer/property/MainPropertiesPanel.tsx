@@ -20,13 +20,56 @@ import { Tab, Tabs, TabTitleText, } from '@patternfly/react-core';
 import { ErrorBoundaryWrapper } from "@shared/ui/ErrorBoundaryWrapper";
 import React from 'react';
 import { MapperPanel } from "./MapperPanel";
+import vscode from "@/vscode";
 
 export function MainPropertiesPanel() {
 
     const [activeTabKey, setActiveTabKey] = React.useState<string | number>("properties");
+    const pendingEditConnectionIdRef = React.useRef<string | null>(null);
+    const activeTabKeyRef = React.useRef(activeTabKey);
+    activeTabKeyRef.current = activeTabKey;
+
+    const scheduleMapperEditDialog = React.useCallback((connectionId: string) => {
+        window.setTimeout(() => {
+            window.postMessage({
+                type: "mapperSelectionAction",
+                action: "editMapping",
+                connectionId,
+            });
+        }, 80);
+    }, []);
+
     const handleTabClick = (event: React.MouseEvent<any> | React.KeyboardEvent | MouseEvent, tabIndex: string | number) => {
         setActiveTabKey(tabIndex);
     };
+
+    React.useEffect(() => {
+        const onMessage = (event: MessageEvent) => {
+            const data = event.data;
+            if (data?.command !== "focusMapperTab" || typeof data.connectionId !== "string") {
+                return;
+            }
+            if (activeTabKeyRef.current === "mapper") {
+                scheduleMapperEditDialog(data.connectionId);
+                return;
+            }
+            pendingEditConnectionIdRef.current = data.connectionId;
+            setActiveTabKey("mapper");
+        };
+        window.addEventListener("message", onMessage);
+        return () => window.removeEventListener("message", onMessage);
+    }, [scheduleMapperEditDialog]);
+
+    React.useEffect(() => {
+        if (activeTabKey === "mapper") {
+            vscode?.postMessage({ command: "openMapperSelectionPanel" });
+            const connectionId = pendingEditConnectionIdRef.current;
+            if (connectionId) {
+                pendingEditConnectionIdRef.current = null;
+                scheduleMapperEditDialog(connectionId);
+            }
+        }
+    }, [activeTabKey, scheduleMapperEditDialog]);
 
 
     function getTab(title: string, icon: string, error: boolean = false) {
