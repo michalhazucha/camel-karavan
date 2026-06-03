@@ -1089,12 +1089,13 @@ function App({ host }: AppProps) {
         <div className="space-y-1 max-h-32 overflow-auto">
           {project.connections.map((conn) => {
             const color = getConnectionColor(conn.id)
+            const connectionHighlight = `color-mix(in oklch, ${color} 15%, transparent)`
             return (
                <Tooltip key={conn.id}>
       <TooltipTrigger asChild>
               <div
                 className="text-base font-mono p-2 rounded flex items-center justify-between gap-2 w-full text-start hover:scale-101 duration-300 ease-in-out transition-transform shadow-sm"
-                style={{ backgroundColor: `color-mix(in oklch, ${color} 15%, transparent)` }}
+                style={{ backgroundColor: connectionHighlight }}
               >
                 <span className="flex-1 truncate">
                   <span className="font-semibold">{conn.sourcePath}</span> → <span className="font-semibold">{conn.targetPath}</span>
@@ -1136,7 +1137,10 @@ function App({ host }: AppProps) {
                 </div>
                   </div>
                </TooltipTrigger>
-              <TooltipContent className="bg-background">
+              <TooltipContent
+                className="bg-background"
+                arrowStyle={{ backgroundColor: connectionHighlight, fill: connectionHighlight }}
+              >
             <div className="flex flex-col gap-2 text-white">
          <p className="flex flex-row gap-2"><span className="font-semibold">Source:</span><span>{conn?.sourcePath}</span></p>
          <p className="flex flex-row gap-2"><span className="font-semibold">Target:</span><span>{conn?.targetPath}</span></p>
