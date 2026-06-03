@@ -14,6 +14,7 @@ import { Card } from "./components/ui/card";
 import { MappedNodeIDs, tabs, ViewMode } from "./lib/constants";
 import { XSLTGenerator, XSDParser, XSLTParser } from "@karavan/mapper-core";
 import { connectionColors } from "./lib/variables";
+import { cn } from "@/lib/utils";
 import type { KaravanMapperHost } from "./karavan-host";
 import { getVsCodeApi } from "./vscode-api";
 
@@ -450,6 +451,8 @@ function App({ host }: AppProps) {
             event.data.connectionId,
             event.data.transformation as IMappingTransformation,
           );
+        } else if (action === "openXsltInEditor") {
+          handleOpenXSLTInEditor();
         }
       } else if (event.data?.command === "requestMapperSelectionState") {
         publishSelectionState();
@@ -871,22 +874,47 @@ function App({ host }: AppProps) {
 
 
 
+  const resolveXsltContent = (): string => {
+    if (generatedXSLT?.trim()) {
+      return generatedXSLT;
+    }
+    const ctxXslt = host?.getContext()?.xslt;
+    if (ctxXslt?.trim()) {
+      return ctxXslt;
+    }
+    if (project.sourceSchema?.nodes && project.targetSchema?.nodes && project.connections.length > 0) {
+      return generator.generate(
+        project.connections as any,
+        project.targetSchema.nodes as any,
+        project.sourceSchema.targetNamespace,
+        project.targetSchema.targetNamespace,
+      );
+    }
+    return "";
+  };
+
   const handleOpenXSLTInEditor = () => {
-    if (!generatedXSLT) {
-      alert("Please generate XSLT first");
+    const xslt = resolveXsltContent();
+    if (!xslt.trim()) {
+      alert("Generate or load XSLT first");
       return;
     }
 
+    if (!generatedXSLT?.trim()) {
+      setGeneratedXSLT(xslt);
+      setShowXSLT(true);
+    }
+
     if (host) {
-      host.openXsltInEditor(generatedXSLT);
+      host.openXsltInEditor(xslt);
       return;
     }
 
     vscode.postMessage({
       type: "openXSLTPreview",
-      content: generatedXSLT
+      content: xslt,
     });
-  }
+  };
 
   const handleSaveToKaravanActivity = () => {
     if (!host) {
@@ -988,6 +1016,14 @@ function App({ host }: AppProps) {
     label: 'Reset',
     method: () => handleResetMappings(),
     disabled: false
+  },
+  {
+    variant: ButtonVariant.Outline,
+    icon: <VscVscodeInsiders className="h-4 w-4 mr-2" />,
+    label: 'Open in VS Code',
+    method: handleOpenXSLTInEditor,
+    disabled: false,
+    hidden: !isKaravanEmbedded,
   }]
 
   const displayedSourcePath = isSecondaryPanel
@@ -997,6 +1033,13 @@ function App({ host }: AppProps) {
     ? syncedSelectionPaths.target
     : selectedTarget?.path;
   const canCreateMapping = Boolean(displayedSourcePath && displayedTargetPath);
+
+  const schemaTreeViewportClass = cn(
+    "rounded-md border border-border p-2 overflow-y-auto",
+    isKaravanEmbedded
+      ? "min-h-[10rem] max-h-[min(28rem,calc(100vh-13rem))]"
+      : "h-[600px]",
+  );
 
   const MappingControls = (
     <Card className={isSelectionPanelMode ? "p-4" : "mt-6 p-4"}>
@@ -1027,6 +1070,18 @@ function App({ host }: AppProps) {
           <Button onClick={handleDeleteAllMappings} disabled={project.connections.length === 0} variant={ButtonVariant.Outline} className="cursor-pointer">
             <LuTrash2 className="h-4 w-4 mr-2" /> Delete All Mappings
           </Button>
+          {isSecondaryPanel && (
+            <Button
+              variant={ButtonVariant.Outline}
+              onClick={() => {
+                vscode.postMessage({ type: "mapperSelectionAction", action: "openXsltInEditor" });
+              }}
+              className="cursor-pointer"
+            >
+              <VscVscodeInsiders className="h-4 w-4 mr-2" />
+              Open in VS Code
+            </Button>
+          )}
         </span>
       </div>
 
@@ -1096,18 +1151,21 @@ function App({ host }: AppProps) {
   }
   // Get connection targets map (sourceId -> array of targetIds)
   return (
-    <div className={isKaravanEmbedded ? "min-h-full bg-background" : "min-h-screen bg-background"}>
+    <div
+      className={cn(
+        "bg-background",
+        isKaravanEmbedded ? "flex h-full min-h-0 flex-col" : "min-h-screen",
+      )}
+    >
       {/* Header */}
-      <header className="border-b border-border bg-card">
+      <header className="shrink-0 border-b border-border bg-card">
         <div className={isKaravanEmbedded ? "px-3 py-2" : "container mx-auto px-4 py-4"}>
           <div className="flex flex-col md:flex-row items-center justify-between">
             <div className="flex flex-col items-center md:items-start">
-              <h1 className={isKaravanEmbedded ? "text-lg font-semibold text-foreground" : "text-3xl font-semibold text-foreground"}>{isKaravanEmbedded ? "Karavan Mapper" : "XSLT Mapper"}</h1>
+              {/* <h1 className={isKaravanEmbedded ? "text-lg font-semibold text-foreground" : "text-3xl font-semibold text-foreground"}>{isKaravanEmbedded ? "Karavan Mapper" : "XSLT Mapper"}</h1>
               <p className={isKaravanEmbedded ? "text-sm text-muted-foreground" : "text-base text-muted-foreground"}>
-                {isKaravanEmbedded
-                  ? "Visual mapping integrated with Camel Karavan activities"
-                  : "Visual XSD to XSLT transformation tool"}
-              </p>
+             
+              </p> */}
             </div>
             <div className="flex py-4 flex-col gap-2 md:flex-row">
               <div className="flex flex-row gap-1 justify-center">
@@ -1146,19 +1204,35 @@ function App({ host }: AppProps) {
         </div>
       </header>
       {/* Main Content */}
-      <div className={isKaravanEmbedded ? "px-3 py-3" : "container mx-auto px-4 py-6"}>
+      <div
+        className={cn(
+          isKaravanEmbedded
+            ? "flex min-h-0 flex-1 flex-col px-3 py-3"
+            : "container mx-auto px-4 py-6",
+        )}
+      >
         {/* Tabs for tree view and flow view */}
-        <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)} className="mb-6">
-          <TabsList>
+        <div
+          value={viewMode}
+          onValueChange={(v) => setViewMode(v as ViewMode)}
+          className={cn(isKaravanEmbedded ? "flex min-h-0 flex-1 flex-col" : "mb-6")}
+        >
+          {/* <TabsList>
             {tabs.map((tab) => (
               <TabsTrigger key={tab.value} value={tab.value}>{tab.label}</TabsTrigger>
             ))
             }
-          </TabsList>
+          </TabsList> */}
 
           {/* Tree View Tab */}
-          <TabsContent value={ViewMode.Tree} className="mt-6">
-            <div ref={treeContainerRef} className="relative !md:overflow-hidden overflow-visible">
+          <div className={cn(isKaravanEmbedded ? "flex min-h-0 flex-1 flex-col" : "mt-6")}>
+            <div
+              ref={treeContainerRef}
+              className={cn(
+                "relative overflow-visible",
+                isKaravanEmbedded && "flex min-h-0 flex-1 flex-col",
+              )}
+            >
               <ConnectionLines
                 connections={project.connections}
                 containerRef={treeContainerRef}
@@ -1166,8 +1240,8 @@ function App({ host }: AppProps) {
               />
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                 {/* Source Schema */}
-                <Card className="p-4">
-                  <div className="flex items-center justify-between mb-4">
+                <Card className={cn("gap-2 p-4 py-4", isKaravanEmbedded && "min-h-0")}>
+                  <div className="flex items-center justify-between">
                     <h2 className="text-xl font-semibold">Source Schema</h2>
                     <Button
                       className="cursor-pointer"
@@ -1179,7 +1253,7 @@ function App({ host }: AppProps) {
                       Load XSD
                     </Button>
                   </div>
-                  <div className="border border-border rounded-md p-2 h-[600px] overflow-auto" ref={leftSchemaListRef}>
+                  <div className={schemaTreeViewportClass} ref={leftSchemaListRef}>
                     {project.sourceSchema && project.sourceSchema.nodes ? (
                       <SchemaTree
                         isTreeExpanded={treeExpanded}
@@ -1202,8 +1276,8 @@ function App({ host }: AppProps) {
                 </Card>
 
                 {/* Target Schema */}
-                <Card className="p-4">
-                  <div className="flex items-center justify-between mb-4">
+                <Card className={cn("gap-2 p-4 py-4", isKaravanEmbedded && "min-h-0")}>
+                  <div className="flex items-center justify-between">
                     <h2 className="text-xl font-semibold">Target Schema</h2>
                     <Button
                       size="sm"
@@ -1215,7 +1289,7 @@ function App({ host }: AppProps) {
                       Load XSD
                     </Button>
                   </div>
-                  <div className="border border-border rounded-md p-2 h-[600px] overflow-auto bg-muted/20">
+                  <div className={cn(schemaTreeViewportClass, "bg-muted/20")}>
                     {project.targetSchema && project.targetSchema.nodes ? (
                       <SchemaTree
                         isTreeExpanded={treeExpanded}
@@ -1235,10 +1309,10 @@ function App({ host }: AppProps) {
                 </Card>
               </div>
             </div>
-          </TabsContent>
+          </div>
 
-          {/* Flow Diagram Tab */}
-          <TabsContent value={ViewMode.Flow} className="mt-6">
+          {/* Flow Diagram Tab
+          <div  className="mt-6">
             <Card className="p-4">
               <h2 className="text-xl font-semibold mb-4">XSLT Flow Visualization</h2>
               {project.sourceSchema && project.targetSchema ? (
@@ -1255,8 +1329,8 @@ function App({ host }: AppProps) {
                 </div>
               )}
             </Card>
-          </TabsContent>
-        </Tabs>
+          </div> */}
+        </div>
 
         {/* Mapping controls live in the VS Code bottom panel when embedded in Karavan */}
         {!isKaravanEmbedded && MappingControls}
@@ -1264,7 +1338,7 @@ function App({ host }: AppProps) {
         {/* XSLT Output */}
         {/* {showXSLT && (
           <Card className="mt-6 p-4 h-full">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between">
               <h3 className="font-semibold">Generated XSLT</h3>
               <span>
                 {typeof window !== 'undefined' && typeof document !== 'undefined' && <Button

@@ -236,14 +236,25 @@ export const KaravanMapperMount = () => {
     }
 
     return (
-        <div className="karavan-mapper-mount" style={{ minHeight: 480, width: "100%", display: "flex", flexDirection: "column" }}>
+        <div className="karavan-mapper-mount" style={{ minHeight: "100%", width: "100%", display: "flex", flexDirection: "column" }}>
             {isLoading && (
                 <div style={{ display: "flex", alignItems: "center", gap: 12, padding: 16 }}>
                     <Spinner size="md" aria-label="Loading mapper" />
                     <span>Loading mapper UI…</span>
                 </div>
             )}
-            <div ref={containerRef} style={{ flex: 1, minHeight: 400, width: "100%", overflow: "auto" }} />
+            <div
+                ref={containerRef}
+                style={{
+                    flex: 1,
+                    minHeight: 0,
+                    height: "100%",
+                    width: "100%",
+                    overflow: "hidden",
+                    display: "flex",
+                    flexDirection: "column",
+                }}
+            />
         </div>
     );
 };
