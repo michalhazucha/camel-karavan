@@ -246,15 +246,15 @@ export function TransformationDialog({
   const hardcodedValueSetter =(e:ChangeEvent<HTMLInputElement>) =>{ setHardcodedValue(e.target.value)}
   return (
     <Dialog open={open} onOpenChange={onOpenChange} >
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-zinc-550 text-zinc-100 border-zinc-800">
+      <DialogContent className="dark max-w-2xl max-h-[90vh] overflow-y-auto border-border bg-card text-card-foreground">
         <DialogHeader className="space-y-2">
-          <DialogTitle className="text-zinc-100">Configure Transformation</DialogTitle>
-          <DialogDescription className="space-y-1 text-zinc-300">
+          <DialogTitle>Configure Transformation</DialogTitle>
+          <DialogDescription className="space-y-1 text-muted-foreground">
             <div className="break-words">
-              Source: <code className="text-sm bg-zinc-500 text-zinc-100 px-1 py-0.5 rounded break-all">{sourcePath}</code>
+              Source: <code className="text-sm rounded bg-muted px-1 py-0.5 break-all text-foreground">{sourcePath}</code>
             </div>
             <div className="break-words">
-              Target: <code className="text-sm bg-zinc-500 text-zinc-100 px-1 py-0.5 rounded break-all">{targetPath}</code>
+              Target: <code className="text-sm rounded bg-muted px-1 py-0.5 break-all text-foreground">{targetPath}</code>
             </div>
           </DialogDescription>
         </DialogHeader>

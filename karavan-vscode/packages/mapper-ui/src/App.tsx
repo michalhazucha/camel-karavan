@@ -58,6 +58,7 @@ function App({ host }: AppProps) {
   const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.Tree)
   const [transformationDialogOpen, setTransformationDialogOpen] = useState(false)
   const [editingConnection, setEditingConnection] = useState<IMappingConnection | null>(null)
+  const [highlightedConnectionId, setHighlightedConnectionId] = useState<string | null>(null)
   const [themeDark, setThemeDark] = useState<boolean>(false)
   const [xsltMappings, setXsltMappings] = useState<Array<{
     sourcePath: string
@@ -452,6 +453,10 @@ function App({ host }: AppProps) {
           );
         } else if (action === "openXsltInEditor") {
           handleOpenXSLTInEditor();
+        } else if (action === "highlightMapping" && typeof event.data.connectionId === "string") {
+          setHighlightedConnectionId(event.data.connectionId);
+        } else if (action === "clearHighlightMapping") {
+          setHighlightedConnectionId(null);
         }
       } else if (event.data?.command === "requestMapperSelectionState") {
         publishSelectionState();
@@ -1033,6 +1038,17 @@ function App({ host }: AppProps) {
     : selectedTarget?.path;
   const canCreateMapping = Boolean(displayedSourcePath && displayedTargetPath);
 
+  const postHighlightMapping = (connectionId: string | null) => {
+    setHighlightedConnectionId(connectionId);
+    if (isSecondaryPanel) {
+      vscode.postMessage({
+        type: "mapperSelectionAction",
+        action: connectionId ? "highlightMapping" : "clearHighlightMapping",
+        connectionId: connectionId ?? undefined,
+      });
+    }
+  };
+
   const schemaTreeViewportClass = cn(
     "rounded-md border border-border p-2 overflow-y-auto",
     isKaravanEmbedded
@@ -1094,8 +1110,13 @@ function App({ host }: AppProps) {
                <Tooltip key={conn.id}>
       <TooltipTrigger asChild>
               <div
-                className="text-base font-mono p-2 rounded flex items-center justify-between gap-2 w-full text-start hover:scale-101 duration-300 ease-in-out transition-transform shadow-sm"
+                className={cn(
+                  "text-base font-mono p-2 rounded flex items-center justify-between gap-2 w-full text-start duration-200 ease-in-out transition-all shadow-sm",
+                  highlightedConnectionId === conn.id && "ring-2 ring-foreground/25 scale-[1.01]",
+                )}
                 style={{ backgroundColor: connectionHighlight }}
+                onMouseEnter={() => postHighlightMapping(conn.id)}
+                onMouseLeave={() => postHighlightMapping(null)}
               >
                 <span className="flex-1 truncate">
                   <span className="font-semibold">{conn.sourcePath}</span> → <span className="font-semibold">{conn.targetPath}</span>
@@ -1251,6 +1272,7 @@ function App({ host }: AppProps) {
                 connections={project.connections}
                 containerRef={treeContainerRef}
                 getConnectionColor={getConnectionColor}
+                highlightedConnectionId={highlightedConnectionId}
               />
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                 {/* Source Schema */}
@@ -1277,6 +1299,8 @@ function App({ host }: AppProps) {
                         side={MappedNodeIDs.Source}
                         onDragStart={handleDragStart}
                         mappedNodeIds={getMappedNodeIds(MappedNodeIDs.Source)}
+                        highlightedConnectionId={highlightedConnectionId}
+                        connections={project.connections}
                       />
                     ) : (
                       <div className="flex items-center justify-center h-full text-muted-foreground">
@@ -1313,6 +1337,8 @@ function App({ host }: AppProps) {
                         side={MappedNodeIDs.Target}
                         onDrop={handleDrop}
                         mappedNodeIds={getMappedNodeIds(MappedNodeIDs.Target)}
+                        highlightedConnectionId={highlightedConnectionId}
+                        connections={project.connections}
                       />
                     ) : (
                       <div className="flex items-center justify-center h-full text-muted-foreground">

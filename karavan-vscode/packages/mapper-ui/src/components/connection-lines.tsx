@@ -10,6 +10,8 @@ interface ConnectionLinesProps {
   connections: IMappingConnection[]
   containerRef: React.RefObject<HTMLDivElement | null>
   getConnectionColor?: (connectionId: string) => string
+  /** When set, non-matching lines are dimmed to help link list hover with tree lines. */
+  highlightedConnectionId?: string | null
 }
 
 interface LineCoordinates {
@@ -21,7 +23,12 @@ interface LineCoordinates {
   color: string
 }
 
-export function ConnectionLines({ connections, containerRef, getConnectionColor }: ConnectionLinesProps) {
+export function ConnectionLines({
+  connections,
+  containerRef,
+  getConnectionColor,
+  highlightedConnectionId = null,
+}: ConnectionLinesProps) {
   const [lines, setLines] = useState<LineCoordinates[]>([])
   const { isMobile } = useIsMobile();
 
@@ -219,7 +226,7 @@ export function ConnectionLines({ connections, containerRef, getConnectionColor 
         observer.disconnect()
       }
     }
-  }, [connections, containerRef, getConnectionColor])
+  }, [connections, containerRef, getConnectionColor, highlightedConnectionId])
 
   // Always render SVG, even with no lines
   return (
@@ -228,7 +235,8 @@ export function ConnectionLines({ connections, containerRef, getConnectionColor 
       style={{ zIndex: 10, width: '100%', height: '100%' }}
     >
       {lines.map((line) => {
-        // line.color already contains the full oklch() value
+        const isHighlightMode = Boolean(highlightedConnectionId)
+        const isActive = !isHighlightMode || line.id === highlightedConnectionId
         return (
           <g key={line.id}>
             <path
@@ -236,7 +244,7 @@ export function ConnectionLines({ connections, containerRef, getConnectionColor 
               stroke={line.color}
               strokeWidth="4px"
               fill="none"
-              opacity="1"
+              opacity={isActive ? "1" : "0.22"}
             />
             {/* <circle cx={line.x1} cy={line.y1} r="4" fill={line.color} opacity="0.8" />
             <circle cx={line.x2} cy={line.y2} r="4" fill={line.color} opacity="0.8" /> */}

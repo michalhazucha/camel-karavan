@@ -446,6 +446,17 @@ export class XsltMapperView {
             });
             return;
         }
+        if (
+            (action === "highlightMapping" || action === "clearHighlightMapping") &&
+            this.karavanPrimaryWebview
+        ) {
+            this.karavanPrimaryWebview.postMessage({
+                type: "mapperSelectionAction",
+                action,
+                connectionId,
+            });
+            return;
+        }
         const message = {
             type: "mapperSelectionAction",
             action,

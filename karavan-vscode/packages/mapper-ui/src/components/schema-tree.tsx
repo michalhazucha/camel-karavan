@@ -1,6 +1,6 @@
 "use client"
 
-import type { IXSDNode } from "@/lib/types"
+import type { IMappingConnection, IXSDNode } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { useEffect, useState } from "react"
 import { LuChevronDown, LuChevronRight, LuCircle } from "react-icons/lu"
@@ -15,6 +15,8 @@ interface ISchemaTreeProps {
   onDrop?: (node: IXSDNode) => void
   mappedNodeIds?: Map<string, string> // Map of nodeId -> color
   isTreeExpanded?: boolean
+  highlightedConnectionId?: string | null
+  connections?: IMappingConnection[]
 }
 
 export function SchemaTree({
@@ -25,7 +27,9 @@ export function SchemaTree({
   onDragStart,
   onDrop,
   mappedNodeIds = new Map(),
-  isTreeExpanded
+  isTreeExpanded,
+  highlightedConnectionId = null,
+  connections = [],
 }: ISchemaTreeProps) {
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set())
   const [allExpanded, setAllExpanded] = useState(isTreeExpanded)
@@ -80,7 +84,21 @@ export function SchemaTree({
     const isExpanded = expandedNodes.has(node.id)
     const isSelected = selectedNodeId === node.id
     const isMapped = mappedNodeIds.has(node.id)
-    const connectionColor = mappedNodeIds.get(node.id) // Get color for this node
+    const connectionColor = mappedNodeIds.get(node.id)
+    const highlightConn = highlightedConnectionId
+      ? connections.find((c) => c.id === highlightedConnectionId)
+      : undefined
+    const isHighlightMode = Boolean(highlightConn)
+    const isNodeHighlighted =
+      highlightConn != null &&
+      (node.id === highlightConn.sourceId || node.id === highlightConn.targetId)
+    const backgroundMix = isMapped && connectionColor
+      ? isHighlightMode
+        ? isNodeHighlighted
+          ? 28
+          : 6
+        : 10
+      : 0
 
     return (
       <div key={node.id} className="select-none">
@@ -91,6 +109,7 @@ export function SchemaTree({
               "flex items-center gap-2 py-1.5 px-2 hover:bg-accent/50 cursor-pointer rounded-sm transition-colors",
               isSelected && "bg-accent",
               isMapped && "border-l-4",
+              isHighlightMode && isNodeHighlighted && "ring-1 ring-inset ring-foreground/20",
             )}
           style={{ 
             paddingLeft: `${level * 16 + 8}px`,
