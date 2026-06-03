@@ -1,21 +1,20 @@
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ButtonVariant, MappingTransformationType, type IMapperProject, type IMappingConnection, type IMappingTransformation, type IXSDNode } from "@/lib/types";
+import { cn } from "@/lib/utils";
+import { XSDParser, XSLTGenerator, XSLTParser } from "@karavan/mapper-core";
 import { Highlight, themes } from "prism-react-renderer";
 import { useEffect, useRef, useState } from "react";
-import { LuDownload, LuFileCode, LuFolderOpen, LuRefreshCcw, LuSave, LuSettings2, LuTrash2, LuUpload, LuWorkflow, } from "react-icons/lu";
+import { LuFileCode, LuRefreshCcw, LuSave, LuSettings2, LuTrash2, LuUpload, LuWorkflow } from "react-icons/lu";
 import { VscVscodeInsiders } from "react-icons/vsc";
 import { ConnectionLines } from "./components/connection-lines";
-import { FlowVisualizer } from "./components/flow-visualizer";
 import { SchemaTree } from "./components/schema-tree";
 import SheetEditor from "./components/SheetEditor";
 import { TransformationDialog } from "./components/transformation-dialog";
 import { Button } from "./components/ui/button";
 import { Card } from "./components/ui/card";
-import { MappedNodeIDs, tabs, ViewMode } from "./lib/constants";
-import { XSLTGenerator, XSDParser, XSLTParser } from "@karavan/mapper-core";
-import { connectionColors } from "./lib/variables";
-import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./components/ui/tooltip";
 import type { KaravanMapperHost } from "./karavan-host";
+import { MappedNodeIDs, ViewMode } from "./lib/constants";
+import { connectionColors } from "./lib/variables";
 import { getVsCodeApi } from "./vscode-api";
 
 declare global {
@@ -1091,8 +1090,9 @@ function App({ host }: AppProps) {
           {project.connections.map((conn) => {
             const color = getConnectionColor(conn.id)
             return (
+               <Tooltip key={conn.id}>
+      <TooltipTrigger asChild>
               <div
-                key={conn.id}
                 className="text-base font-mono p-2 rounded flex items-center justify-between gap-2 w-full text-start hover:scale-101 duration-300 ease-in-out transition-transform shadow-sm"
                 style={{ backgroundColor: `color-mix(in oklch, ${color} 15%, transparent)` }}
               >
@@ -1134,7 +1134,16 @@ function App({ host }: AppProps) {
                     <LuTrash2 className="h-3 w-3" />
                   </Button>
                 </div>
-              </div>
+                  </div>
+               </TooltipTrigger>
+              <TooltipContent className="bg-background">
+            <div className="flex flex-col gap-2 text-white">
+         <p className="flex flex-row gap-2"><span className="font-semibold">Source:</span><span>{conn?.sourcePath}</span></p>
+         <p className="flex flex-row gap-2"><span className="font-semibold">Target:</span><span>{conn?.targetPath}</span></p>
+         <p className="flex flex-row gap-2"><span className="font-semibold">Type:</span><span>{conn?.transformation?.type}</span></p>
+  </div>
+       </TooltipContent>
+     </Tooltip>
             )
           })}
         </div>
@@ -1151,6 +1160,7 @@ function App({ host }: AppProps) {
   }
   // Get connection targets map (sourceId -> array of targetIds)
   return (
+     <TooltipProvider>
     <div
       className={cn(
         "bg-background",
@@ -1415,7 +1425,7 @@ function App({ host }: AppProps) {
         />
       )}
     </div>
-  );
+  </TooltipProvider>);
 }
 
 export default App;
