@@ -29,6 +29,12 @@
     overflow: auto;
 }
 
+.karavan .main-properties.main-properties-mapper {
+    padding-bottom: 0;
+    overflow: hidden;
+    min-height: 0;
+}
+
 .karavan .main-properties .karavan-mapper-mount {
     flex: 1;
     min-height: 0;

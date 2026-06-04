@@ -1052,12 +1052,12 @@ function App({ host }: AppProps) {
   const schemaTreeViewportClass = cn(
     "rounded-md border border-border p-2 overflow-y-auto",
     isKaravanEmbedded
-      ? "min-h-[10rem] max-h-[min(28rem,calc(100vh-13rem))]"
+      ? " h-full"
       : "h-[600px]",
   );
 
   const MappingControls = (
-    <Card className={isSelectionPanelMode ? "p-4" : "mt-6 p-4"}>
+    <Card className={isSelectionPanelMode ? " h-full p-4" : "mt-6 p-4 h-full"}>
       <div className="flex items-center justify-between">
         <div className="flex-1">
           <h3 className="font-semibold mb-2">Current Selection</h3>
@@ -1100,9 +1100,9 @@ function App({ host }: AppProps) {
         </span>
       </div>
 
-      <div className="mt-4">
+      <div className="mt-4 h-full">
         <h3 className="font-semibold mb-2">Mappings ({project.connections.length})</h3>
-        <div className="space-y-1 max-h-32 overflow-auto">
+        <div className="space-y-1 max-h-full overflow-auto">
           {project.connections.map((conn) => {
             const color = getConnectionColor(conn.id)
             const connectionHighlight = `color-mix(in oklch, ${color} 15%, transparent)`
@@ -1274,10 +1274,10 @@ function App({ host }: AppProps) {
                 getConnectionColor={getConnectionColor}
                 highlightedConnectionId={highlightedConnectionId}
               />
-              <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 h-full mb-10">
                 {/* Source Schema */}
                 <Card className={cn("gap-2 p-4 py-4", isKaravanEmbedded && "min-h-0")}>
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between pb-4">
                     <h2 className="text-xl font-semibold">Source Schema</h2>
                     <Button
                       className="cursor-pointer"
@@ -1315,7 +1315,7 @@ function App({ host }: AppProps) {
 
                 {/* Target Schema */}
                 <Card className={cn("gap-2 p-4 py-4", isKaravanEmbedded && "min-h-0")}>
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between pb-4">
                     <h2 className="text-xl font-semibold">Target Schema</h2>
                     <Button
                       size="sm"
@@ -1346,6 +1346,9 @@ function App({ host }: AppProps) {
                       </div>
                     )}
                   </div>
+                    <p className="text-sm text-muted-foreground mt-2">
+                    💡 Drag elements from source to target to create mappings
+                  </p>
                 </Card>
               </div>
             </div>

@@ -14,13 +14,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+import vscode from "@/vscode";
 import { DslProperties } from "@features/project/designer/property/DslProperties";
 import { ExpressionEditor } from "@features/project/designer/property/expression/ExpressionEditor";
 import { Tab, Tabs, TabTitleText, } from '@patternfly/react-core';
 import { ErrorBoundaryWrapper } from "@shared/ui/ErrorBoundaryWrapper";
 import React from 'react';
 import { MapperPanel } from "./MapperPanel";
-import vscode from "@/vscode";
 
 export function MainPropertiesPanel() {
 
@@ -99,7 +99,7 @@ export function MainPropertiesPanel() {
 
 
     return (
-        <div className='main-properties'>
+        <div className={`main-properties ${activeTabKey === "mapper" ? "main-properties-mapper" : ""}`.trim()}>
             {getPropertiesPanelTabs()}
             <ErrorBoundaryWrapper onError={error => console.error(error)}>
                 {activeTabKey === 'properties' && <DslProperties expressionEditor={ExpressionEditor}/> }
