@@ -57,7 +57,6 @@ import {FieldSelectWithCreate} from "@shared/ui/FieldSelectWithCreate";
 import {FieldSelectScrollable} from "@shared/ui/FieldSelectScrollable";
 import {CamelMetadataApi} from "@karavan-core/model/CamelMetadata";
 import {NO_INFRA_BUTTON_PROPERTIES} from "@features/project/designer/property/PropertyStore";
-import {coercePropertyScalar} from "@/karavan/utils/workspaceFileResolver";
 
 const prefix = "parameters";
 const beanPrefix = "#bean:";
@@ -89,7 +88,7 @@ export function ComponentPropertyField(props: Props) {
     const ref = useRef<any>(null);
     const [checkChanges, setCheckChanges] = useState<boolean>(false);
 
-    useEffect(() => setTextValue(coercePropertyScalar(value)), [value])
+    useEffect(() => setTextValue(value), [])
 
     useEffect(() => {
         if (stepDoubleClicked && element) {
@@ -291,14 +290,6 @@ export function ComponentPropertyField(props: Props) {
     }
 
 
-    const configurationSelectorSource = (): string => {
-        const fromText = coercePropertyScalar(textValue);
-        if (fromText) {
-            return fromText;
-        }
-        return coercePropertyScalar(value);
-    };
-
     function getInfrastructureSelectorModal() {
         return (
             configurationSelector && <ConfigurationSelectorModal
@@ -306,7 +297,7 @@ export function ComponentPropertyField(props: Props) {
                 isOpen={configurationSelector}
                 onClose={() => closeConfigurationSelector()}
                 name={property.name}
-                customCode={configurationSelectorSource()}
+                customCode={value}
                 defaultTabIndex={configurationSelectorDefaultTab}
                 dslLanguage={dslLanguage}
                 title={property.displayName}
@@ -321,13 +312,7 @@ export function ComponentPropertyField(props: Props) {
 
     function getOpenConfigButton(property: ComponentProperty, configurationSelectorDefaultTab: string = 'properties') {
         if (element?.dslName === 'ToDefinition' && (element as any)?.uri === 'sql' && property.name === 'query') {
-            configurationSelectorDefaultTab = 'editor';
-        } else if (
-            property.name === 'resourceUri'
-            || /\.(xslt?|xml|xsd)$/i.test(configurationSelectorSource())
-            || /^file:/i.test(configurationSelectorSource())
-        ) {
-            configurationSelectorDefaultTab = 'editor';
+            configurationSelectorDefaultTab = 'editor'
         }
         return (
             hideConfigSelector

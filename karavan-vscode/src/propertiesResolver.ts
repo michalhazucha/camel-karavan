@@ -32,10 +32,10 @@ async function findPropertiesFile(startDir: string): Promise<{ filePath: string;
     }
 }
 
-async function loadProjectRoots(workspaceRoot: string): Promise<Map<string, string>> {
+async function loadProjectRoots(propertiesSearchDir: string): Promise<Map<string, string>> {
     const roots = new Map<string, string>();
     try {
-        const found = await findPropertiesFile(workspaceRoot);
+        const found = await findPropertiesFile(propertiesSearchDir);
         if (!found) return roots;
         const data = await vscode.workspace.fs.readFile(vscode.Uri.file(found.filePath));
         const text = Buffer.from(data).toString('utf8');
@@ -65,8 +65,12 @@ async function loadProjectRoots(workspaceRoot: string): Promise<Map<string, stri
  * project.root.* prefix from application.properties.
  * Falls back to `file:` + absolutePath when no placeholder matches.
  */
-export async function makeStoredValue(absolutePath: string, workspaceRoot: string): Promise<string> {
-    const roots = await loadProjectRoots(workspaceRoot);
+export async function makeStoredValue(
+    absolutePath: string,
+    workspaceRoot: string,
+    propertiesSearchDir?: string,
+): Promise<string> {
+    const roots = await loadProjectRoots(propertiesSearchDir ?? workspaceRoot);
     for (const [key, val] of roots) {
         if (val && absolutePath.startsWith(val)) {
             return 'file:{{' + key + '}}' + absolutePath.slice(val.length);
@@ -80,11 +84,18 @@ export async function makeStoredValue(absolutePath: string, workspaceRoot: strin
  * absolute filesystem path by stripping the `file:` prefix and substituting all
  * `{{project.root.*}}` placeholders using values from application.properties.
  */
-export async function resolveStoredPath(storedPath: string, workspaceRoot: string): Promise<string> {
+export async function resolveStoredPath(
+    storedPath: string,
+    workspaceRoot: string,
+    propertiesSearchDir?: string,
+): Promise<string> {
     let resolved = storedPath.startsWith('file:') ? storedPath.slice(5) : storedPath;
-    const roots = await loadProjectRoots(workspaceRoot);
+    const roots = await loadProjectRoots(propertiesSearchDir ?? workspaceRoot);
     for (const [key, val] of roots) {
         resolved = resolved.split('{{' + key + '}}').join(val);
+    }
+    if (!path.isAbsolute(resolved)) {
+        resolved = path.resolve(workspaceRoot, resolved);
     }
     return resolved;
 }

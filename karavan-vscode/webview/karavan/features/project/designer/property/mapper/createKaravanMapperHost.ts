@@ -19,13 +19,18 @@ import {
     getWorkspaceFileContent,
     resolvePathAgainstIntegrationDir,
     workspaceFileLookupKeys,
+    coercePropertyScalar,
 } from "@/karavan/utils/workspaceFileResolver";
+import {
+    deriveMapperPaths,
+} from "./mapperRouteUtils";
 import {
     getMapperXslt,
     parseMapperConfig,
     serializeMapperConfig,
     type MapperConfig,
 } from "./mapperStepUtils";
+import type { Integration } from "@karavan-core/model/IntegrationDefinition";
 
 const getWorkspaceXsdFiles = (files: string[]): string[] =>
     files
@@ -70,15 +75,19 @@ export const buildMapperContext = (
     step: CamelElement | undefined,
     workspaceFiles: string[],
     integrationDir = "",
+    integration?: Integration,
 ): KaravanMapperContext | null => {
     if (!step) {
         return null;
     }
-    const config = parseMapperConfig((step as any)?.note);
+    const noteConfig = parseMapperConfig((step as any)?.note);
+    const derived = deriveMapperPaths(step, integration);
+    const sourcePath = noteConfig.sourcePath?.trim() || derived.sourcePath;
+    const targetPath = noteConfig.targetPath?.trim() || derived.targetPath;
     return {
         xslt: getMapperXslt(step),
-        sourcePath: resolveMapperAssetPath(config.sourcePath, integrationDir),
-        targetPath: resolveMapperAssetPath(config.targetPath, integrationDir),
+        sourcePath: resolveMapperAssetPath(sourcePath, integrationDir),
+        targetPath: resolveMapperAssetPath(targetPath, integrationDir),
         workspaceXsdFiles: getWorkspaceXsdFiles(workspaceFiles),
     };
 };
@@ -103,9 +112,16 @@ export const saveMapperToActivity = (
         });
     } else {
         const parameters = { ...(clone.parameters ?? {}) };
-        const knownXsltKeys = ["xslt", "xsltTemplate", "template", "stylesheet"];
+        const knownXsltKeys = ["inputBinding", "xslt", "xsltTemplate", "template", "stylesheet"];
         const existingKey = knownXsltKeys.find((k) => Object.prototype.hasOwnProperty.call(parameters, k));
-        parameters[existingKey ?? "xslt"] = payload.xslt;
+        const key = existingKey ?? "inputBinding";
+        const prevBinding = coercePropertyScalar(parameters[key]);
+        if (prevBinding && /\.(xsl|xslt)$/i.test(prevBinding)) {
+            // BW5 kamelet: keep file reference — XSLT content is loaded from inputBinding path at runtime
+            parameters[key] = prevBinding;
+        } else {
+            parameters[key] = payload.xslt;
+        }
         clone.parameters = parameters;
         config.xslt = payload.xslt;
     }
@@ -146,7 +162,8 @@ export const createKaravanMapperHost = (
             return null;
         }
         const { files, integrationDir } = useWorkspaceStore.getState();
-        return buildMapperContext(step, files ?? [], integrationDir);
+        const integration = useIntegrationStore.getState().integration;
+        return buildMapperContext(step, files ?? [], integrationDir, integration);
     },
 
     getCachedWorkspaceFile: (relativePath) => {
@@ -195,7 +212,8 @@ export const createKaravanMapperHost = (
         const updated = saveMapperToActivity(step, payload);
         applyMapperStepToIntegration(updated, tab);
         const { files, integrationDir } = useWorkspaceStore.getState();
-        emit({ type: "contextChanged", context: buildMapperContext(updated, files ?? [], integrationDir) });
+        const integration = useIntegrationStore.getState().integration;
+        emit({ type: "contextChanged", context: buildMapperContext(updated, files ?? [], integrationDir, integration) });
         EventBus.sendAlert("Mapper", "XSLT saved to the activity.", "success");
     },
 
@@ -221,7 +239,8 @@ export const createKaravanMapperHost = (
                 case "workspaceFileContent": {
                     const step = getStep();
                     const { files, integrationDir, fileContents } = useWorkspaceStore.getState();
-                    const ctx = buildMapperContext(step, files ?? [], integrationDir);
+                    const integration = useIntegrationStore.getState().integration;
+                    const ctx = buildMapperContext(step, files ?? [], integrationDir, integration);
                     const path = msg.relativePath ?? msg.requestedPath;
                     let role = msg.requestedRole as "source" | "target" | "xslt" | undefined;
                     if (!role && ctx && path) {

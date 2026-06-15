@@ -41,6 +41,7 @@ import {useDesignerStore, useIntegrationStore, useSelectorStore} from "../Design
 import {shallow} from "zustand/shallow";
 import {v4 as uuidv4} from 'uuid';
 import {CamelUi} from "@features/project/designer/utils/CamelUi";
+import {applyMapperKameletDefaults} from "@features/project/designer/property/mapper/mapperRouteUtils";
 
 export function useRouteDesignerHook() {
 
@@ -275,6 +276,7 @@ export function useRouteDesignerHook() {
                     dsl.uri = 'kamelet:sink';
                 }
                 const to = CamelDefinitionApi.createStep(dsl.dsl, {uri: dsl.uri});
+                applyMapperKameletDefaults(to, dsl.uri);
                 addStep(to, parentId, position)
                 break;
             case 'ToDynamicDefinition' :

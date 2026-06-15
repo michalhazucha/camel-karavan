@@ -13,6 +13,10 @@ export type MapperConfig = {
 
 export const MAPPER_NOTE_PREFIX = "[karavan-xslt-mapper]";
 
+export const sanitizeActivityFileName = (name: string): string => name.trim().replace(/\s+/g, "_");
+
+export const sanitizeVariableReceive = (name: string): string => name.trim().replace(/\s+/g, "-");
+
 export const parseMapperConfig = (note?: string): MapperConfig => {
     if (!note) {
         return {};
@@ -47,6 +51,9 @@ const isKameletMapperUri = (uri?: string): boolean => {
         return false;
     }
     const lower = uri.toLowerCase();
+    if (lower === "kamelet:activity-mapper-action") {
+        return true;
+    }
     return lower.startsWith("kamelet:") && /(mapper|transform-xml|xslt)/.test(lower);
 };
 

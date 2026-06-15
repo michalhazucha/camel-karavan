@@ -4,10 +4,11 @@ import { shallow } from "zustand/shallow";
 import { CamelDefinitionApiExt } from "@karavan-core/api/CamelDefinitionApiExt";
 import { useDesignerStore, useIntegrationStore } from "../../DesignerStore";
 import { isMapperStep } from "./mapperStepUtils";
+import { deriveMapperPaths, ensureMapperNoteConfig } from "./mapperRouteUtils";
 import { useWorkspaceStore } from "@/karavan/stores/workspaceStore";
-import { workspaceFileLookupKeys } from "@/karavan/utils/workspaceFileResolver";
+import { workspaceFileLookupKeys, storedPathForWorkspaceRequest } from "@/karavan/utils/workspaceFileResolver";
 import { requestWorkspaceFile } from "@/karavan/utils/workspaceApi";
-import { createKaravanMapperHost } from "./createKaravanMapperHost";
+import { createKaravanMapperHost, applyMapperStepToIntegration } from "./createKaravanMapperHost";
 import { ensureMapperReactGlobals } from "./ensureMapperReactGlobals";
 import type { KaravanMapperHost } from "@karavan/mapper-core";
 
@@ -160,6 +161,14 @@ export const KaravanMapperMount = () => {
 
         const mount = async () => {
             try {
+                const integration = useIntegrationStore.getState().integration;
+                const tab = useDesignerStore.getState().tab;
+                const withNote = ensureMapperNoteConfig(mapperStep, integration);
+                if (withNote) {
+                    applyMapperStepToIntegration(withNote, tab);
+                }
+                const activeStep = withNote ?? mapperStep;
+
                 const bundle = await loadMapperBundle();
                 if (cancelled) {
                     return;
@@ -185,18 +194,23 @@ export const KaravanMapperMount = () => {
                 bundle.mountKaravanMapper(container, host);
                 const ctx = host.getContext();
                 const { integrationDir } = useWorkspaceStore.getState();
+                const derived = deriveMapperPaths(activeStep, integration);
                 const requestMapperFile = (
                     path: string | undefined,
-                    role: "source" | "target",
+                    role: "source" | "target" | "xslt",
                 ) => {
                     if (!path) {
                         return;
                     }
-                    const candidates = workspaceFileLookupKeys(path, null);
-                    requestWorkspaceFile(path, integrationDir || undefined, candidates, role);
+                    const stored = storedPathForWorkspaceRequest(path) ?? path;
+                    const candidates = workspaceFileLookupKeys(stored, null);
+                    requestWorkspaceFile(stored, integrationDir || undefined, candidates, role);
                 };
                 requestMapperFile(ctx?.sourcePath, "source");
                 requestMapperFile(ctx?.targetPath, "target");
+                if (!ctx?.xslt?.trim()) {
+                    requestMapperFile(derived.xsltBindingPath, "xslt");
+                }
                 setLoadError(undefined);
             } catch (error: unknown) {
                 if (!cancelled) {

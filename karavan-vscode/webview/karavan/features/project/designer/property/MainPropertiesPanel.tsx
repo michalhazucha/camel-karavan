@@ -20,14 +20,24 @@ import { ExpressionEditor } from "@features/project/designer/property/expression
 import { Tab, Tabs, TabTitleText, } from '@patternfly/react-core';
 import { ErrorBoundaryWrapper } from "@shared/ui/ErrorBoundaryWrapper";
 import React from 'react';
+import { shallow } from "zustand/shallow";
+import { useDesignerStore } from "@features/project/designer/DesignerStore";
 import { MapperPanel } from "./MapperPanel";
+import { isMapperStep } from "./mapper/mapperStepUtils";
 
 export function MainPropertiesPanel() {
 
     const [activeTabKey, setActiveTabKey] = React.useState<string | number>("properties");
+    const [selectedStep] = useDesignerStore((s) => [s.selectedStep], shallow);
     const pendingEditConnectionIdRef = React.useRef<string | null>(null);
     const activeTabKeyRef = React.useRef(activeTabKey);
     activeTabKeyRef.current = activeTabKey;
+
+    React.useEffect(() => {
+        if (selectedStep && isMapperStep(selectedStep)) {
+            setActiveTabKey("mapper");
+        }
+    }, [(selectedStep as any)?.uuid]);
 
     const scheduleMapperEditDialog = React.useCallback((connectionId: string) => {
         window.setTimeout(() => {

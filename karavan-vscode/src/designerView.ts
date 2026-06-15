@@ -424,11 +424,13 @@ export class DesignerView {
             }
         };
         const workspaceRoot = utils.getRoot() ?? '';
-        const searchRoot = workspaceRoot
-            || (integrationFullPath ? path.dirname(integrationFullPath) : '');
+        const propertiesSearchDir = integrationFullPath
+            ? path.dirname(integrationFullPath)
+            : workspaceRoot;
+        const searchRoot = propertiesSearchDir || workspaceRoot;
         if (relativePath.includes('{{') && searchRoot) {
             const stored = relativePath.startsWith('file:') ? relativePath : `file:${relativePath}`;
-            void resolveStoredPath(stored, searchRoot)
+            void resolveStoredPath(stored, workspaceRoot || searchRoot, propertiesSearchDir || searchRoot)
                 .then(async (absolute) => {
                     const content = await utils.readWorkspaceRelativeFile(absolute);
                     const cacheKey = utils.asWorkspaceRelativePath(absolute);

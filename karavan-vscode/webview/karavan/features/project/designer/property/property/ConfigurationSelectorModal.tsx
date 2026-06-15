@@ -14,27 +14,26 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { requestWorkspaceFile, requestWorkspaceFiles } from "@/karavan/utils/workspaceApi";
+import React, {useEffect, useRef, useState} from 'react';
+import {Badge, Button, capitalize, Content, Modal, ModalBody, ModalFooter, ModalHeader, TextInput, ToggleGroup, ToggleGroupItem} from '@patternfly/react-core';
+import {InnerScrollContainer, OuterScrollContainer, Table, Tbody, Td, Th, Thead, Tr} from "@patternfly/react-table";
+import {InfrastructureAPI} from "../../utils/InfrastructureAPI";
+import {useDesignerStore} from "../../DesignerStore";
+import {shallow} from "zustand/shallow";
+import {ExpressionEditor} from "../expression/ExpressionEditor";
+import './ConfigurationSelectorModal.css'
+import {useCodeStore} from "@features/project/designer/CodeStore";
 import {
     coercePropertyScalar,
-    editorLanguageFromFileName,
     ensureEditorString,
-    resolveBoundFileName,
+    editorLanguageFromFileName,
+    isWorkspaceLoadableResource,
+    normalizeWorkspaceResourcePath,
     resolveEditorContent,
-    resolveWorkspaceRelativePaths,
     storedPathForWorkspaceRequest,
-    workspaceFileLookupKeys,
 } from "@/karavan/utils/workspaceFileResolver";
-import { Badge, Button, capitalize, Content, Modal, ModalBody, ModalFooter, ModalHeader, TextInput, ToggleGroup, ToggleGroupItem } from '@patternfly/react-core';
-import { InnerScrollContainer, OuterScrollContainer, Table, Tbody, Td, Th, Thead, Tr } from "@patternfly/react-table";
-import React, { useEffect, useState } from 'react';
-import { shallow } from "zustand/shallow";
-import { ensureWorkspaceMessageBridge } from "@/karavan/utils/workspaceMessageBridge";
-import { useWorkspaceStore } from "@stores/workspaceStore";
-import { useDesignerStore, useIntegrationStore } from "../../DesignerStore";
-import { InfrastructureAPI } from "../../utils/InfrastructureAPI";
-import { ExpressionEditor } from "../expression/ExpressionEditor";
-import './ConfigurationSelectorModal.css';
+import {requestWorkspaceFile} from "@/karavan/utils/workspaceApi";
+import {useWorkspaceStore} from "@stores/workspaceStore";
 
 const SYNTAX_EXAMPLES = [
     {key: 'property:', value: 'group.property', description: 'Application property'},
@@ -64,94 +63,57 @@ export function ConfigurationSelectorModal(props: Props) {
 
     const defaultTabs = InfrastructureAPI.infrastructure === 'kubernetes' ? ['properties', 'configMap', 'secret', 'services', 'examples', 'editor'] : ['properties', 'examples', 'services', 'editor'];
     const [propertyPlaceholders] = useDesignerStore((s) => [s.propertyPlaceholders], shallow)
-    const [integrationFiles] = useIntegrationStore((s) => [s.files], shallow)
-    const [workspaceFiles, workspaceFileContents, integrationDir] = useWorkspaceStore(
-        (s) => [s.files, s.fileContents, s.integrationDir],
-        shallow,
-    );
-    const inputLanguage = dslLanguage?.[0];
     const [tabs, setTabs] = useState<string[]>([]);
     const [tabIndex, setTabIndex] = useState<string | number>();
     const [filter, setFilter] = useState<string>();
-    const [editorText, setEditorText] = useState<string>('');
-
-    const propertyScalar = coercePropertyScalar(customCode);
+    const [code, setCode] = useCodeStore((s) => [s.code, s.setCode], shallow);
+    const fileBindingRef = useRef<string | null>(null);
+    const [fileEditorLanguage, setFileEditorLanguage] = useState<[string, string, string] | undefined>(dslLanguage);
+    const { files, fileContents, integrationDir } = useWorkspaceStore(
+        (s) => ({
+            files: s.files ?? [],
+            fileContents: s.fileContents ?? {},
+            integrationDir: s.integrationDir ?? '',
+        }),
+        shallow,
+    );
 
     useEffect(() => {
-        ensureWorkspaceMessageBridge();
-    }, []);
-
-    useEffect(() => {
-        if (!isOpen) {
-            return;
-        }
         const newTabs = hideEditor ? defaultTabs.filter(tab => tab !== 'editor') : defaultTabs;
-        setTabs(newTabs);
-        setTabIndex(newTabs.includes(defaultTabIndex) ? defaultTabIndex : newTabs[0]);
-        requestWorkspaceFiles();
-    }, [isOpen, defaultTabIndex, hideEditor]);
-
-    const syncEditorFromSources = () => {
-        const resolved = resolveEditorContent(
-            propertyScalar,
-            integrationFiles,
-            workspaceFiles,
-            workspaceFileContents,
-            inputLanguage,
-            integrationDir,
-        );
-        setEditorText(ensureEditorString(resolved));
-    };
+        setTabs(newTabs)
+        setTabIndex(newTabs.includes(defaultTabIndex) ? defaultTabIndex : newTabs[0])
+    }, [])
 
     useEffect(() => {
         if (!isOpen) {
             return;
         }
-        syncEditorFromSources();
-        const fileName = resolveBoundFileName(propertyScalar, inputLanguage);
-        const storedPath = storedPathForWorkspaceRequest(propertyScalar);
-        if (!fileName || !storedPath) {
+        const raw = coercePropertyScalar(customCode);
+        if (!raw) {
+            fileBindingRef.current = null;
+            setCode('');
             return;
         }
-        const integrationFile = integrationFiles.find((file) => file.name === fileName);
-        const hasIntegrationContent =
-            typeof integrationFile?.code === 'string'
-            && integrationFile.code.length > 0
-            && integrationFile.code !== '[object Object]';
-        const lookupKeys = workspaceFileLookupKeys(propertyScalar, fileName);
-        const hasWorkspaceContent = lookupKeys.some(
-            (key) => typeof workspaceFileContents[key] === 'string' && workspaceFileContents[key].length > 0,
-        );
-        const workspacePaths = resolveWorkspaceRelativePaths(fileName, workspaceFiles, integrationDir);
-        if (!hasIntegrationContent && !hasWorkspaceContent) {
-            console.log("[XKaravan] requesting workspace file:", storedPath, workspacePaths);
-            requestWorkspaceFile(storedPath, integrationDir, workspacePaths);
-        }
-    }, [isOpen, propertyScalar, integrationFiles, workspaceFiles, workspaceFileContents, inputLanguage, integrationDir]);
-
-    useEffect(() => {
-        if (tabIndex !== 'editor' || !isOpen) {
+        if (!isWorkspaceLoadableResource(raw)) {
+            fileBindingRef.current = null;
+            setFileEditorLanguage(dslLanguage);
+            setCode(ensureEditorString(customCode));
             return;
         }
-        const fileName = resolveBoundFileName(propertyScalar, inputLanguage);
-        const storedPath = storedPathForWorkspaceRequest(propertyScalar);
-        if (!fileName || !storedPath) {
+        fileBindingRef.current = raw;
+        const pathForLang = normalizeWorkspaceResourcePath(raw);
+        setFileEditorLanguage(dslLanguage ?? [editorLanguageFromFileName(pathForLang), '', '']);
+        const fromCache = resolveEditorContent(customCode, [], files, fileContents, undefined, integrationDir);
+        if (fromCache) {
+            setCode(fromCache);
             return;
         }
-        syncEditorFromSources();
-        const resolved = resolveEditorContent(
-            propertyScalar,
-            integrationFiles,
-            workspaceFiles,
-            workspaceFileContents,
-            inputLanguage,
-            integrationDir,
-        );
-        if (!resolved) {
-            const workspacePaths = resolveWorkspaceRelativePaths(fileName, workspaceFiles, integrationDir);
-            requestWorkspaceFile(storedPath, integrationDir, workspacePaths);
+        const stored = storedPathForWorkspaceRequest(customCode);
+        if (stored) {
+            requestWorkspaceFile(stored, integrationDir || undefined);
+            setCode(`Loading ${raw}...`);
         }
-    }, [tabIndex, isOpen, propertyScalar, workspaceFiles, workspaceFileContents, integrationDir, inputLanguage, integrationFiles]);
+    }, [isOpen, customCode, files, fileContents, integrationDir, dslLanguage])
 
     function checkFilter(name: string): boolean {
         if (filter !== undefined && name) {
@@ -397,7 +359,7 @@ export function ConfigurationSelectorModal(props: Props) {
     const handleKeyDown = (event: React.KeyboardEvent) => {
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
             event.preventDefault();
-            onSave(props.name, editorText);
+            onSave(props.name, code);
         } else if (event.key === 'Escape') {
             event.preventDefault();
             onClose();
@@ -437,35 +399,12 @@ export function ConfigurationSelectorModal(props: Props) {
                 {tabIndex === 'services' && getServicesTable()}
                 {tabIndex === 'properties' && getPropertiesTable()}
                 {tabIndex === 'examples' && getExamplesTable()}
-                {tabIndex === 'editor' && !hideEditor && (() => {
-                    const boundFile = resolveBoundFileName(propertyScalar, inputLanguage);
-                    const editorLang = boundFile
-                        ? editorLanguageFromFileName(boundFile)
-                        : (dslLanguage?.[0] ?? 'plaintext');
-                    const editorDslLanguage: [string, string, string] = [editorLang, editorLang, editorLang];
-                    const displayText = ensureEditorString(editorText);
-                    const isLoadingResource = boundFile && !displayText;
-                    return (
-                        <div className="configuration-selector-editor-pane">
-                            {isLoadingResource && (
-                                <div className="configuration-selector-editor-loading">Loading {boundFile}…</div>
-                            )}
-                            <ExEditor
-                                resource
-                                dark={dark}
-                                customCode={displayText}
-                                name={boundFile ?? name}
-                                onChange={(v) => setEditorText(ensureEditorString(v))}
-                                title={title}
-                                dslLanguage={editorDslLanguage}
-                            />
-                        </div>
-                    );
-                })()}
+                {tabIndex === 'editor' && !hideEditor &&
+                    <ExEditor dark={dark} customCode={code} name={name} onChange={setCode} title={title} dslLanguage={fileEditorLanguage}/>}
             </ModalBody>
             <ModalFooter>
                 <Button key="save" variant="primary"
-                        onClick={e => onSave(props.name, editorText)}>Save</Button>
+                        onClick={e => onSave(props.name, fileBindingRef.current ?? code)}>Save</Button>
                 <Button key="cancel" variant="secondary"
                         onClick={e => onClose()}>Close</Button>
             </ModalFooter>
