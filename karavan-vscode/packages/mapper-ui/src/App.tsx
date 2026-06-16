@@ -12,7 +12,7 @@ import { TransformationDialog } from "./components/transformation-dialog";
 import { Button } from "./components/ui/button";
 import { Card } from "./components/ui/card";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./components/ui/tooltip";
-import type { KaravanMapperHost } from "./karavan-host";
+import type { KaravanMapperContext, KaravanMapperHost, KaravanSourceVariable } from "./karavan-host";
 import { MappedNodeIDs, ViewMode } from "./lib/constants";
 import { connectionColors } from "./lib/variables";
 import { getVsCodeApi } from "./vscode-api";
@@ -27,6 +27,166 @@ declare global {
 interface AppProps {
   host?: KaravanMapperHost;
 }
+
+const schemaPathBaseName = (p?: string): string => {
+  if (!p) {
+    return "";
+  }
+  const normalized = p.replace(/\\/g, "/").replace(/^file:/i, "");
+  return normalized.split("/").pop() ?? normalized;
+};
+
+const pathsLooselyMatch = (a?: string, b?: string): boolean => {
+  if (!a || !b) {
+    return false;
+  }
+  const na = a.replace(/\\/g, "/");
+  const nb = b.replace(/\\/g, "/");
+  if (na === nb || na.endsWith(nb) || nb.endsWith(na)) {
+    return true;
+  }
+  return schemaPathBaseName(na) === schemaPathBaseName(nb) && schemaPathBaseName(na).length > 0;
+};
+
+const resolveSourceVariableEntry = (
+  ctx: KaravanMapperContext | null | undefined,
+  relativePath?: string,
+): KaravanSourceVariable | undefined => {
+  const variables = ctx?.sourceVariables ?? [];
+  if (variables.length === 0) {
+    return undefined;
+  }
+  for (const entry of variables) {
+    if (entry.schemaPath && pathsLooselyMatch(entry.schemaPath, relativePath ?? ctx?.sourcePath)) {
+      return entry;
+    }
+  }
+  const withSchema = [...variables].reverse().find((entry) => entry.schemaPath?.trim());
+  return withSchema ?? variables[variables.length - 1];
+};
+
+const sourceVariableTreePath = (entry: KaravanSourceVariable): string => {
+  const binding = entry.bindingName?.trim() || entry.variableReceive.replace(/^\$/, "");
+  return binding.startsWith("$") ? binding : `$${binding}`;
+};
+
+const mergeSourceRoots = (existing: IXSDNode[] | undefined, newRoots: IXSDNode[]): IXSDNode[] => {
+  const merged = [...(existing ?? [])];
+  for (const root of newRoots) {
+    const index = merged.findIndex((node) => node.path === root.path);
+    if (index >= 0) {
+      merged[index] = root;
+    } else {
+      merged.push(root);
+    }
+  }
+  return merged;
+};
+
+const buildVirtualTreeFromMappings = (
+  varPath: string,
+  mappings: Array<{ sourcePath: string }>,
+): IXSDNode | null => {
+  const relevant = mappings.filter(
+    (mapping) =>
+      mapping.sourcePath === varPath
+      || mapping.sourcePath.startsWith(`${varPath}/`),
+  );
+  if (relevant.length === 0) {
+    return null;
+  }
+
+  const root: IXSDNode = {
+    id: `var-${varPath.replace(/^\$/, "")}`,
+    name: varPath,
+    type: "variable",
+    path: varPath,
+    children: [],
+  };
+
+  const ensureChild = (parent: IXSDNode, segment: string, fullPath: string): IXSDNode => {
+    const children = parent.children ?? [];
+    let child = children.find((node) => node.name === segment);
+    if (!child) {
+      child = {
+        id: `virt-${fullPath.replace(/[^\w-]+/g, "_")}`,
+        name: segment,
+        type: "element",
+        path: fullPath,
+        children: [],
+      };
+      children.push(child);
+      parent.children = children;
+    }
+    return child;
+  };
+
+  for (const mapping of relevant) {
+    const afterVar = mapping.sourcePath.replace(/^\$[\w-]+\/?/, "");
+    const segments = afterVar
+      .split("/")
+      .map((segment) => segment.replace(/^\w+:/, ""))
+      .filter(Boolean);
+    let parent = root;
+    let cumulative = varPath;
+    for (const segment of segments) {
+      cumulative = `${cumulative}/${segment}`;
+      parent = ensureChild(parent, segment, cumulative);
+    }
+  }
+
+  return root;
+};
+
+const augmentSourceSchemaFromMappings = (
+  sourceSchema: IMapperProject["sourceSchema"],
+  mappings: Array<{ sourcePath: string }>,
+  ctx: KaravanMapperContext | null | undefined,
+): IMapperProject["sourceSchema"] => {
+  if (!sourceSchema) {
+    return sourceSchema;
+  }
+  const existingPaths = new Set((sourceSchema.nodes ?? []).map((node) => node.path));
+  const extraRoots: IXSDNode[] = [];
+  for (const entry of ctx?.sourceVariables ?? []) {
+    const varPath = sourceVariableTreePath(entry);
+    if (existingPaths.has(varPath)) {
+      continue;
+    }
+    const virtual = buildVirtualTreeFromMappings(varPath, mappings);
+    if (virtual) {
+      extraRoots.push(virtual);
+      existingPaths.add(varPath);
+    }
+  }
+  if (extraRoots.length === 0) {
+    return sourceSchema;
+  }
+  return {
+    ...sourceSchema,
+    nodes: mergeSourceRoots(sourceSchema.nodes, extraRoots),
+  };
+};
+
+const rebaseNodePaths = (node: IXSDNode, prefix: string): IXSDNode => ({
+  ...node,
+  path: node.path ? `${prefix}/${node.path}` : prefix,
+  children: node.children?.map((child) => rebaseNodePaths(child, prefix)),
+});
+
+const wrapNodesWithVariable = (nodes: IXSDNode[], variableReceive: string): IXSDNode[] => {
+  const varPath = variableReceive.startsWith("$") ? variableReceive : `$${variableReceive}`;
+  const varKey = varPath.replace(/^\$/, "");
+  return [
+    {
+      id: `var-${varKey}`,
+      name: varPath,
+      type: "variable",
+      path: varPath,
+      children: nodes.map((node) => rebaseNodePaths(node, varPath)),
+    },
+  ];
+};
 
 function App({ host }: AppProps) {
   const isSelectionPanelMode = window.__KARAVAN_MAPPER_MODE === "selection-panel";
@@ -70,6 +230,7 @@ function App({ host }: AppProps) {
   >([])
   const [originalLoadedXSLT, setOriginalLoadedXSLT] = useState<string | null>(null)
   const [activeSchemaPaths, setActiveSchemaPaths] = useState<{ source?: string; target?: string }>({})
+  const [allowLoadXsd, setAllowLoadXsd] = useState(!host)
   /** Selection paths mirrored from the primary mapper (bottom panel has no XSD trees). */
   const [syncedSelectionPaths, setSyncedSelectionPaths] = useState<{
     source?: string;
@@ -77,6 +238,7 @@ function App({ host }: AppProps) {
   }>({})
   const pendingXsltRef = useRef<string | null>(null)
   const schemasAwaitingXsltRef = useRef(false)
+  const lastXsltContentRef = useRef<string | null>(null)
 
   const PLACEHOLDER_SOURCE = "SourceSchema"
   const PLACEHOLDER_TARGET = "TargetSchema"
@@ -147,7 +309,18 @@ function App({ host }: AppProps) {
     if (!host) {
       return;
     }
+    setProject({
+      name: "New Mapping Project",
+      sourceSchema: null,
+      targetSchema: null,
+      connections: [],
+    });
+    setGeneratedXSLT("");
+    setShowXSLT(false);
+    setSelectedSource(null);
+    setSelectedTarget(null);
     const ctx = host.getContext();
+    setAllowLoadXsd(ctx?.allowLoadXsd ?? false);
     setActiveSchemaPaths({
       source: ctx?.sourcePath,
       target: ctx?.targetPath,
@@ -173,10 +346,43 @@ function App({ host }: AppProps) {
         void loadXsdFromContent(cached, role, path);
       }
     };
-    loadCachedSchema("source", ctx?.sourcePath);
+    const loadAllCachedSourceSchemas = () => {
+      const seen = new Set<string>();
+      for (const entry of ctx?.sourceVariables ?? []) {
+        const path = entry.schemaPath?.trim();
+        if (!path || seen.has(path)) {
+          continue;
+        }
+        seen.add(path);
+        loadCachedSchema("source", path);
+      }
+      if (seen.size === 0) {
+        loadCachedSchema("source", ctx?.sourcePath);
+      }
+    };
+    loadAllCachedSourceSchemas();
     loadCachedSchema("target", ctx?.targetPath);
 
-    return host.subscribe((event) => {
+    const onWorkspaceFileUpdated = (event: Event) => {
+      const detail = (event as CustomEvent).detail as {
+        relativePath?: string;
+        requestedPath?: string;
+        requestedRole?: "source" | "target" | "xslt";
+        content?: string;
+      };
+      const content = detail?.content?.trim();
+      if (!content) {
+        return;
+      }
+      if (detail.requestedRole === "source" || detail.requestedRole === "target") {
+        void loadXsdFromContent(content, detail.requestedRole, detail.relativePath ?? detail.requestedPath);
+      } else if (detail.requestedRole === "xslt") {
+        void applyXsltContent(content);
+      }
+    };
+    window.addEventListener("karavan-workspace-file-updated", onWorkspaceFileUpdated);
+
+    const unsubscribe = host.subscribe((event) => {
       if (event.type === "xsltUpdated" && event.content) {
         void applyXsltContent(event.content);
       }
@@ -196,10 +402,36 @@ function App({ host }: AppProps) {
         }
       }
       if (event.type === "contextChanged" && event.context) {
+        setAllowLoadXsd(event.context.allowLoadXsd ?? false);
         setActiveSchemaPaths({
           source: event.context.sourcePath,
           target: event.context.targetPath,
         });
+        const reloadCachedSchema = (role: "source" | "target", path?: string) => {
+          if (!path?.trim()) {
+            return;
+          }
+          const cached = host.getCachedWorkspaceFile?.(path);
+          if (cached?.trim()) {
+            void loadXsdFromContent(cached, role, path);
+          }
+        };
+        const reloadAllSourceSchemas = () => {
+          const seen = new Set<string>();
+          for (const entry of event.context.sourceVariables ?? []) {
+            const path = entry.schemaPath?.trim();
+            if (!path || seen.has(path)) {
+              continue;
+            }
+            seen.add(path);
+            reloadCachedSchema("source", path);
+          }
+          if (seen.size === 0) {
+            reloadCachedSchema("source", event.context.sourcePath);
+          }
+        };
+        reloadAllSourceSchemas();
+        reloadCachedSchema("target", event.context.targetPath);
         if (event.context.xslt) {
           setGeneratedXSLT(event.context.xslt);
           setShowXSLT(true);
@@ -207,6 +439,11 @@ function App({ host }: AppProps) {
         }
       }
     });
+
+    return () => {
+      window.removeEventListener("karavan-workspace-file-updated", onWorkspaceFileUpdated);
+      unsubscribe();
+    };
   }, [host]);
 
   useEffect(() => {
@@ -230,6 +467,7 @@ function App({ host }: AppProps) {
 
   const loadXsltContent = async (content: string, options?: { silent?: boolean }) => {
     try {
+      lastXsltContentRef.current = content;
       const mappings = xsltParser.parse(content);
       setXsltMappings(
         mappings.map((m) => ({
@@ -256,15 +494,31 @@ function App({ host }: AppProps) {
           targetSchema?.nodes?.length > 0 &&
           targetSchema.nodes[0].name !== "TargetSchema";
 
-        if (!hasSourceSchema || !hasTargetSchema) {
+        if ((!hasSourceSchema || !hasTargetSchema) && mappings.length > 0) {
           const { sourceXSD, targetXSD } = xsltParser.constructSchemasFromMappings(mappings);
           const xsdParser = new XSDParser();
-          sourceSchema = xsdParser.parse(sourceXSD);
-          targetSchema = xsdParser.parse(targetXSD);
+          if (!hasSourceSchema) {
+            sourceSchema = xsdParser.parse(sourceXSD);
+          }
+          if (!hasTargetSchema) {
+            targetSchema = xsdParser.parse(targetXSD);
+          }
         }
 
         if (!sourceSchema || !targetSchema) {
-          throw new Error("Failed to load or construct schemas");
+          return {
+            ...prev,
+            connections: [],
+          };
+        }
+
+        const augmentedSource = augmentSourceSchemaFromMappings(
+          sourceSchema,
+          mappings,
+          host?.getContext() ?? null,
+        );
+        if (augmentedSource) {
+          sourceSchema = augmentedSource;
         }
 
         const connections =
@@ -287,7 +541,7 @@ function App({ host }: AppProps) {
       setOriginalLoadedXSLT(content);
       setShowXSLT(true);
 
-      if (!options?.silent) {
+      if (!options?.silent && mappings.length > 0) {
         alert(`✓ Successfully loaded XSLT with ${mappings.length} mappings ${schemaMsg}`);
       }
     } catch (error) {
@@ -311,7 +565,16 @@ function App({ host }: AppProps) {
       return;
     }
     try {
-      const schema = parser.parse(content);
+      let schema = parser.parse(content);
+      if (side === "source" && host && schema.nodes?.length) {
+        const entry = resolveSourceVariableEntry(host.getContext(), relativePath);
+        if (entry) {
+          schema = {
+            ...schema,
+            nodes: wrapNodesWithVariable(schema.nodes, sourceVariableTreePath(entry)),
+          };
+        }
+      }
       if (relativePath) {
         setActiveSchemaPaths((prev) => ({
           ...prev,
@@ -320,9 +583,19 @@ function App({ host }: AppProps) {
       }
       setProject((prev) => ({
         ...prev,
-        sourceSchema: side === "source" ? schema : prev.sourceSchema,
+        sourceSchema:
+          side === "source"
+            ? {
+                ...schema,
+                nodes: mergeSourceRoots(prev.sourceSchema?.nodes, schema.nodes ?? []),
+              }
+            : prev.sourceSchema,
         targetSchema: side === "target" ? schema : prev.targetSchema,
       }));
+
+      if (host && lastXsltContentRef.current?.trim()) {
+        void loadXsltContent(lastXsltContentRef.current, { silent: true });
+      }
     } catch (error) {
       console.error(`Error parsing ${side} XSD:`, error);
     }
@@ -498,8 +771,11 @@ function App({ host }: AppProps) {
   //TODO: SEARCH FOR APACHE CAMEL CODE AND HOW TO DO THE INTEGRATION FOR THIS MAPPER. 
   //TODO: INVESTIGATE WSDL. IS IT POSSIBLE AND HOW BIG CHANGE IS IT TO INTEGRATE WSDL INTO THE MAPPER
   //TODO: REFACTOR WHOLE CODE STRUCTURE OF GENERATORS AND PARSERS SO IT WILL BE SCALABLE FOR MORE PEOPLE TO WORK ON. ALSO REFACTOR App.tsx to smaller pieces
-  // Load empty schemas on mount - user needs to upload XSD files
+  // Standalone mode only — embedded Karavan loads schemas from activity context.
   useEffect(() => {
+    if (host) {
+      return;
+    }
     const sourceXSD = parser.generateEmptyXSD("SourceSchema")
     const targetXSD = parser.generateEmptyXSD("TargetSchema")
 
@@ -515,7 +791,7 @@ function App({ host }: AppProps) {
     } catch (error) {
       console.error("Error loading empty schemas:", error)
     }
-  }, [])
+  }, [host])
 
   const handleFileUpload = async (file: File, side: MappedNodeIDs) => {
 
@@ -858,6 +1134,9 @@ function App({ host }: AppProps) {
   }
 
   const handleUploadXSD = (side: MappedNodeIDs) => {
+    if (host && !allowLoadXsd) {
+      return;
+    }
     if (host) {
       host.pickWorkspaceFile(side === MappedNodeIDs.Source ? "source" : "target", [".xsd", ".xml", ".wsdl"]);
       return;
@@ -1279,6 +1558,7 @@ function App({ host }: AppProps) {
                 <Card className={cn("gap-2 p-4 py-4", isKaravanEmbedded && "min-h-0")}>
                   <div className="flex items-center justify-between pb-4">
                     <h2 className="text-xl font-semibold">Source Schema</h2>
+                    {allowLoadXsd && (
                     <Button
                       className="cursor-pointer"
                       size="sm"
@@ -1288,6 +1568,7 @@ function App({ host }: AppProps) {
                       <LuUpload className="h-4 w-4 mr-2" />
                       Load XSD
                     </Button>
+                    )}
                   </div>
                   <div className={schemaTreeViewportClass} ref={leftSchemaListRef}>
                     {project.sourceSchema && project.sourceSchema.nodes ? (
@@ -1317,6 +1598,7 @@ function App({ host }: AppProps) {
                 <Card className={cn("gap-2 p-4 py-4", isKaravanEmbedded && "min-h-0")}>
                   <div className="flex items-center justify-between pb-4">
                     <h2 className="text-xl font-semibold">Target Schema</h2>
+                    {allowLoadXsd && (
                     <Button
                       size="sm"
                       variant="outline"
@@ -1326,6 +1608,7 @@ function App({ host }: AppProps) {
                       <LuUpload className="h-4 w-4 mr-2" />
                       Load XSD
                     </Button>
+                    )}
                   </div>
                   <div className={cn(schemaTreeViewportClass, "bg-muted/20")}>
                     {project.targetSchema && project.targetSchema.nodes ? (

@@ -31,6 +31,16 @@ export const ensureWorkspaceMessageBridge = (): void => {
                         msg.relativePath,
                     );
                     keys.forEach((key) => store.setWorkspaceFileContent(key, content));
+                    window.dispatchEvent(
+                        new CustomEvent("karavan-workspace-file-updated", {
+                            detail: {
+                                relativePath: msg.relativePath,
+                                requestedPath: msg.requestedPath,
+                                requestedRole: msg.requestedRole,
+                                content,
+                            },
+                        }),
+                    );
                 } else if (msg.error) {
                     console.warn("[XKaravan] workspace file read failed:", msg.relativePath, msg.error);
                 }

@@ -23,9 +23,12 @@ import {
 } from "@/karavan/utils/workspaceFileResolver";
 import {
     deriveMapperPaths,
+    buildMapperSourceVariables,
 } from "./mapperRouteUtils";
 import {
     getMapperXslt,
+    isDedicatedMapperActivity,
+    isMapperStep,
     parseMapperConfig,
     serializeMapperConfig,
     type MapperConfig,
@@ -84,11 +87,33 @@ export const buildMapperContext = (
     const derived = deriveMapperPaths(step, integration);
     const sourcePath = noteConfig.sourcePath?.trim() || derived.sourcePath;
     const targetPath = noteConfig.targetPath?.trim() || derived.targetPath;
+    const xsltPath = derived.xsltBindingPath;
+    const inlineXslt = getMapperXslt(step);
+    const resolvedSourcePath = resolveMapperAssetPath(sourcePath, integrationDir);
+    const resolvedXsltPath = resolveMapperAssetPath(xsltPath, integrationDir);
+    const cachedXslt =
+        inlineXslt?.trim()
+        || (resolvedXsltPath ? getWorkspaceFileContent(
+            resolvedXsltPath,
+            workspaceFiles,
+            useWorkspaceStore.getState().fileContents,
+            integrationDir,
+            workspaceFileLookupKeys(resolvedXsltPath, null),
+        ) : undefined);
+    const sourceVariables = buildMapperSourceVariables(
+        integration,
+        step.uuid,
+        cachedXslt,
+        (p) => resolveMapperAssetPath(p, integrationDir),
+    );
     return {
-        xslt: getMapperXslt(step),
-        sourcePath: resolveMapperAssetPath(sourcePath, integrationDir),
+        xslt: inlineXslt,
+        xsltPath: resolvedXsltPath,
+        sourcePath: resolvedSourcePath,
         targetPath: resolveMapperAssetPath(targetPath, integrationDir),
+        sourceVariables,
         workspaceXsdFiles: getWorkspaceXsdFiles(workspaceFiles),
+        allowLoadXsd: isDedicatedMapperActivity(step),
     };
 };
 
@@ -238,31 +263,58 @@ export const createKaravanMapperHost = (
                     break;
                 case "workspaceFileContent": {
                     const step = getStep();
-                    const { files, integrationDir, fileContents } = useWorkspaceStore.getState();
+                    const { files, integrationDir } = useWorkspaceStore.getState();
                     const integration = useIntegrationStore.getState().integration;
                     const ctx = buildMapperContext(step, files ?? [], integrationDir, integration);
                     const path = msg.relativePath ?? msg.requestedPath;
+                    const requestedPath = typeof msg.requestedPath === "string" ? msg.requestedPath : undefined;
                     let role = msg.requestedRole as "source" | "target" | "xslt" | undefined;
-                    if (!role && ctx && path) {
-                        if (pathsMatch(ctx.sourcePath, path)) {
-                            role = "source";
-                        } else if (pathsMatch(ctx.targetPath, path)) {
-                            role = "target";
+                    if (!role && ctx) {
+                        const candidates = [path, requestedPath, ctx.sourcePath, ctx.targetPath, ctx.xsltPath].filter(
+                            (p): p is string => typeof p === "string" && p.length > 0,
+                        );
+                        for (const candidate of candidates) {
+                            if (pathsMatch(ctx.sourcePath, candidate)) {
+                                role = "source";
+                                break;
+                            }
+                            if (pathsMatch(ctx.targetPath, candidate)) {
+                                role = "target";
+                                break;
+                            }
+                            if (pathsMatch(ctx.xsltPath, candidate)) {
+                                role = "xslt";
+                                break;
+                            }
                         }
                     }
-                    const contentFromStore =
-                        typeof path === "string"
-                            ? fileContents[path] ?? fileContents[normalizePath(path)]
-                            : undefined;
-                    if (role) {
+                    const resolveCachedContent = (lookupPath?: string): string | undefined => {
+                        if (!lookupPath) {
+                            return undefined;
+                        }
+                        const keys = workspaceFileLookupKeys(lookupPath, path ?? null);
+                        return getWorkspaceFileContent(
+                            lookupPath,
+                            files ?? [],
+                            useWorkspaceStore.getState().fileContents,
+                            integrationDir,
+                            keys,
+                        );
+                    };
+                    const content =
+                        typeof msg.content === "string" && msg.content.length > 0
+                            ? msg.content
+                            : resolveCachedContent(path)
+                            ?? resolveCachedContent(requestedPath)
+                            ?? (role === "source" ? resolveCachedContent(ctx?.sourcePath) : undefined)
+                            ?? (role === "target" ? resolveCachedContent(ctx?.targetPath) : undefined)
+                            ?? (role === "xslt" ? resolveCachedContent(ctx?.xsltPath) : undefined);
+                    if (role && content?.trim()) {
                         handler({
                             type: "workspaceFile",
                             role,
                             relativePath: path,
-                            content:
-                                typeof msg.content === "string" && msg.content.length > 0
-                                    ? msg.content
-                                    : contentFromStore,
+                            content,
                             error: msg.error,
                         });
                     }

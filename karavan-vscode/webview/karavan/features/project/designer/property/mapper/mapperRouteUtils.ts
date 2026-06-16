@@ -1,3 +1,4 @@
+import type { KaravanSourceVariable } from "@karavan/mapper-core";
 import { CamelDefinitionApiExt } from "@karavan-core/api/CamelDefinitionApiExt";
 import { CamelUtil } from "@karavan-core/api/CamelUtil";
 import { ToDefinition } from "@karavan-core/model/CamelDefinition";
@@ -13,7 +14,10 @@ import {
 export const MAPPER_KAMELET_URI = "kamelet:activity-mapper-action";
 
 export interface UpstreamSchemaRef {
+    /** Karavan step variableReceive (activity id), e.g. Assign-messageId. */
     variableReceive: string;
+    /** BW5 binding name used in XSLT ($messageVar) — from parameters.variableName when set. */
+    bindingName: string;
     storedPath: string;
 }
 
@@ -38,6 +42,33 @@ const schemaPathFromStep = (step: any): string => {
     );
 };
 
+const bindingNameFromStep = (step: any): string => {
+    const params = step?.parameters ?? {};
+    const variableName = coercePropertyScalar(params.variableName);
+    if (variableName) {
+        return variableName.replace(/^\$/, "");
+    }
+    const vr: string = step?.variableReceive ?? step?.name ?? "";
+    return vr.replace(/^\$/, "");
+};
+
+/** Collect `xsl:param @name` values from XSLT text (no DOM). */
+export const extractXsltParamNames = (xsltContent: string): string[] => {
+    if (!xsltContent?.trim()) {
+        return [];
+    }
+    const names = new Set<string>();
+    const paramPattern = /<xsl:param\b[^>]*\bname=["']([^"']+)["']/gi;
+    let match: RegExpExecArray | null;
+    while ((match = paramPattern.exec(xsltContent)) !== null) {
+        const name = match[1]?.trim();
+        if (name) {
+            names.add(name.replace(/^\$/, ""));
+        }
+    }
+    return [...names];
+};
+
 /**
  * BW5 routes use global variable scope — collect every variableReceive in the route
  * except the selected mapper step itself.
@@ -56,10 +87,31 @@ export const getUpstreamStepSchemas = (
         if (step.uuid === selectedStepUuid) {
             return;
         }
-        const vr: string = step.variableReceive ?? "";
-        if (vr && !seen.has(vr)) {
-            seen.add(vr);
-            result.push({ variableReceive: `$${vr}`, storedPath: schemaPathFromStep(step) });
+        const dslName = String(step.dslName ?? "");
+        if (dslName === "SetVariableDefinition" || dslName === "setVariable") {
+            const name: string = step.name ?? "";
+            const bindingName = bindingNameFromStep(step);
+            const dedupeKey = bindingName || name;
+            if (dedupeKey && !seen.has(dedupeKey)) {
+                seen.add(dedupeKey);
+                result.push({
+                    variableReceive: name ? `$${name}` : `$${bindingName}`,
+                    bindingName: bindingName || name,
+                    storedPath: "",
+                });
+            }
+        } else {
+            const vr: string = step.variableReceive ?? "";
+            const bindingName = bindingNameFromStep(step);
+            const dedupeKey = bindingName || vr;
+            if (dedupeKey && !seen.has(dedupeKey)) {
+                seen.add(dedupeKey);
+                result.push({
+                    variableReceive: vr ? `$${vr.replace(/^\$/, "")}` : `$${bindingName}`,
+                    bindingName,
+                    storedPath: schemaPathFromStep(step),
+                });
+            }
         }
         for (const val of Object.values(step)) {
             if (Array.isArray(val)) {
@@ -82,6 +134,43 @@ export const getUpstreamStepSchemas = (
         walk(from);
     }
     return result;
+};
+
+/** Merge upstream step variables with xsl:param names for mapper source panel. */
+export const buildMapperSourceVariables = (
+    integration: Integration | undefined,
+    stepUuid: string | undefined,
+    xsltContent?: string,
+    resolvePath?: (path: string | undefined) => string | undefined,
+): KaravanSourceVariable[] => {
+    const resolve = resolvePath ?? ((p) => p);
+    const upstream = integration && stepUuid ? getUpstreamStepSchemas(integration, stepUuid) : [];
+    const paramNames = xsltContent ? extractXsltParamNames(xsltContent) : [];
+    const byBinding = new Map<string, KaravanSourceVariable>();
+
+    for (const entry of upstream) {
+        const bindingName = entry.bindingName;
+        byBinding.set(bindingName, {
+            variableReceive: `$${bindingName}`,
+            bindingName,
+            stepVariableReceive: entry.variableReceive,
+            schemaPath: resolve(entry.storedPath),
+            kind: "upstream",
+        });
+    }
+
+    for (const param of paramNames) {
+        if (byBinding.has(param)) {
+            continue;
+        }
+        byBinding.set(param, {
+            variableReceive: `$${param}`,
+            bindingName: param,
+            kind: "xslt-param",
+        });
+    }
+
+    return [...byBinding.values()];
 };
 
 export const getKameletParameterPath = (step: CamelElement, ...keys: string[]): string => {
@@ -110,15 +199,34 @@ export const deriveMapperPaths = (
     integration?: Integration,
 ): DerivedMapperPaths => {
     const noteConfig = parseMapperConfig((step as any)?.note);
-    const description = ((step as any)?.description as string | undefined)?.trim() || "Map Data";
+    const description =
+        ((step as any)?.description as string | undefined)?.trim()
+        || ((step as any)?.id as string | undefined)?.trim()
+        || "activity";
     const sanitized = sanitizeActivityFileName(description);
     const variableReceive = (step as any)?.variableReceive as string | undefined;
 
     let targetPath = noteConfig.targetPath?.trim();
     if (!targetPath) {
-        targetPath =
-            getKameletParameterPath(step, "outputSchema", "variableSchema")
-            || (variableReceive ? `xsd/${variableReceive.replace(/-/g, "_")}_output.xsd` : `xsd/${sanitized}_output.xsd`);
+        const inputSchema = getKameletParameterPath(step, "inputSchema");
+        if (inputSchema) {
+            targetPath = inputSchema;
+        } else {
+            const binding = getKameletParameterPath(step, "inputBinding");
+            if (binding) {
+                const xsdFromBinding = binding
+                    .replace(/\/xslt\//gi, "/xsd/")
+                    .replace(/\\xslt\\/gi, "\\xsd\\");
+                if (xsdFromBinding !== binding) {
+                    targetPath = xsdFromBinding;
+                }
+            }
+        }
+        if (!targetPath) {
+            targetPath =
+                getKameletParameterPath(step, "outputSchema", "variableSchema")
+                || (variableReceive ? `xsd/${variableReceive.replace(/-/g, "_")}_input.xsd` : `xsd/${sanitized}_input.xsd`);
+        }
     }
 
     let sourcePath = noteConfig.sourcePath?.trim();
@@ -145,7 +253,10 @@ export const deriveMapperPaths = (
     return { sourcePath, targetPath, xsltBindingPath };
 };
 
-/** Persist auto-derived paths into step note when not yet configured (TIBCO Input Editor analogue). */
+/**
+ * @deprecated Do not persist to YAML — buildMapperContext uses deriveMapperPaths at runtime.
+ * Kept for backwards compatibility if a step already has an explicit note override.
+ */
 export const ensureMapperNoteConfig = (
     step: CamelElement,
     integration?: Integration,

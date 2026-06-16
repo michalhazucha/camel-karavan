@@ -21,16 +21,15 @@ import { useDesignerStore } from "../DesignerStore";
 import { KaravanMapperMount } from "./mapper/KaravanMapperMount";
 import { isMapperStep } from "./mapper/mapperStepUtils";
 
-export { isMapperStep } from "./mapper/mapperStepUtils";
+export { isMapperStep, hasInputBinding } from "./mapper/mapperStepUtils";
 
 export function MapperPanel() {
     const [selectedStep] = useDesignerStore((s) => [s.selectedStep], shallow);
-    const mapperStep = isMapperStep(selectedStep);
 
-    if (!mapperStep) {
+    if (!selectedStep || !isMapperStep(selectedStep)) {
         return (
-            <Alert isInline variant="info" title="Mapper is available for Transform and Mapper Activity steps.">
-                Select a Transform step or Mapper Activity to load or edit XSLT mapping in this panel.
+            <Alert isInline variant="info" title="Select an activity with mapping">
+                Choose a step that has <code>parameters.inputBinding</code> (CallProcess, Map Data, Transform, …) to view or edit its XSLT mapping.
             </Alert>
         );
     }

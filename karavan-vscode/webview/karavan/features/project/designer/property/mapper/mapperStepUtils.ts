@@ -13,6 +13,11 @@ export type MapperConfig = {
 
 export const MAPPER_NOTE_PREFIX = "[karavan-xslt-mapper]";
 
+const looksLikeResourcePath = (value: string): boolean =>
+    /^file:/i.test(value.trim())
+    || /\{\{project\.root\./i.test(value)
+    || /\.(xslt?|xsd|xml|wsdl)$/i.test(value.trim());
+
 export const sanitizeActivityFileName = (name: string): string => name.trim().replace(/\s+/g, "_");
 
 export const sanitizeVariableReceive = (name: string): string => name.trim().replace(/\s+/g, "-");
@@ -46,7 +51,7 @@ export const serializeMapperConfig = (note: string | undefined, config: MapperCo
     return [baseNote, serializedConfig].filter(Boolean).join("\n");
 };
 
-const isKameletMapperUri = (uri?: string): boolean => {
+export const isKameletMapperUri = (uri?: string): boolean => {
     if (!uri) {
         return false;
     }
@@ -55,6 +60,42 @@ const isKameletMapperUri = (uri?: string): boolean => {
         return true;
     }
     return lower.startsWith("kamelet:") && /(mapper|transform-xml|xslt)/.test(lower);
+};
+
+/** Dedicated Mapper / XSLT step — Load XSD is only offered here (not on CallProcess / JMS). */
+export const isDedicatedMapperActivity = (step: unknown): boolean => {
+    if (!step) {
+        return false;
+    }
+    const s = step as CamelElement;
+    if (s.dslName === "TransformDefinition") {
+        return true;
+    }
+    if (
+        (s.dslName === "ToDefinition" || s.dslName === "ToDynamicDefinition")
+        && isKameletMapperUri((s as ToDefinition)?.uri)
+    ) {
+        return true;
+    }
+    const expressionLanguage = (s as any)?.expression?.language?.language;
+    return expressionLanguage === "xslt";
+};
+
+/** BW5/TIBCO: any kamelet step with parameters.inputBinding is a mapper (CallProcess, JMS, RV reply, …). */
+export const hasInputBinding = (step: unknown): boolean => {
+    if (!step || typeof step !== "object") {
+        return false;
+    }
+    const params = (step as { parameters?: Record<string, unknown> }).parameters ?? {};
+    const binding = params.inputBinding;
+    if (typeof binding === "string") {
+        return binding.trim().length > 0;
+    }
+    if (binding && typeof binding === "object" && "expression" in (binding as object)) {
+        const expr = String((binding as { expression?: string }).expression ?? "").trim();
+        return expr.length > 0;
+    }
+    return false;
 };
 
 export const getMapperXslt = (step?: CamelElement): string => {
@@ -70,10 +111,10 @@ export const getMapperXslt = (step?: CamelElement): string => {
 
     // Prefer the inline DSL expression — that is what Camel runs. A copy in `note` can be stale
     // (e.g. after "Save to Activity" updated only expression, or older saves duplicated xslt in note).
-    if (inline?.trim()) {
+    if (inline?.trim() && !looksLikeResourcePath(inline)) {
         return inline;
     }
-    if (noteConfig.xslt?.trim()) {
+    if (noteConfig.xslt?.trim() && !looksLikeResourcePath(noteConfig.xslt)) {
         return noteConfig.xslt;
     }
     return "";
@@ -84,6 +125,9 @@ export const isMapperStep = (step: unknown): boolean => {
         return false;
     }
     const s = step as CamelElement;
+    if (hasInputBinding(step)) {
+        return true;
+    }
     if (s.dslName === "TransformDefinition") {
         return true;
     }

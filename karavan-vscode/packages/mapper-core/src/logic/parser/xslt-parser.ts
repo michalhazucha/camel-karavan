@@ -2,6 +2,68 @@
 
 import type { IMappingConnection, IXSDNode, IXSLTMapping } from "../../types.js";
 import { MappingTransformationType, TransformationTypes } from "../../types.js";
+
+/** XPath expressions that cannot be shown as 1:1 field lines in the visual mapper. */
+export const isVisualMappableExpression = (expression: string): boolean => {
+  const trimmed = expression.trim();
+  if (!trimmed) {
+    return false;
+  }
+  if (/^concat\s*\(/i.test(trimmed)) {
+    return false;
+  }
+  if (/^current-dateTime\s*\(\s*\)/i.test(trimmed)) {
+    return false;
+  }
+  if (/^exists\s*\(/i.test(trimmed)) {
+    return false;
+  }
+  if (/ancestor-or-self::/i.test(trimmed) || /namespace::node\(\)/i.test(trimmed)) {
+    return false;
+  }
+  if (/\/@\*$/.test(trimmed) || trimmed === "@*") {
+    return false;
+  }
+  if (/\/node\(\)$/.test(trimmed) || trimmed === "node()") {
+    return false;
+  }
+  if (/^["'].*["']$/.test(trimmed) || /^(true|false)\(\s*\)$/.test(trimmed)) {
+    return false;
+  }
+  if (trimmed.includes("/*") || /\*\[\d+\]/.test(trimmed)) {
+    return false;
+  }
+  if (/^local-name\s*\(/i.test(trimmed) || /^translate\s*\(/i.test(trimmed)) {
+    return false;
+  }
+  if (/^(camel|tib|BW):/i.test(trimmed)) {
+    return false;
+  }
+  return true;
+};
+
+const normalizePathSegments = (path: string): string[] =>
+  path
+    .replace(/^\$/, "")
+    .replace(/\w+:/g, "")
+    .split("/")
+    .filter(Boolean);
+
+const pathsReferToSameNode = (nodePath: string, mappingPath: string): boolean => {
+  const nodeSegs = normalizePathSegments(nodePath);
+  const mapSegs = normalizePathSegments(mappingPath);
+  if (nodeSegs.length === 0 || mapSegs.length === 0) {
+    return false;
+  }
+  if (nodeSegs.join("/") === mapSegs.join("/")) {
+    return true;
+  }
+  if (nodeSegs.length !== mapSegs.length) {
+    return false;
+  }
+  return nodeSegs.every((seg, i) => seg === mapSegs[i]);
+};
+
 export class XSLTParser {
   private static readonly XSLT_NS = "http://www.w3.org/1999/XSL/Transform";
   private namespaceMap: Map<string, string> = new Map();
@@ -392,11 +454,12 @@ ${elementsXML}
         if (trimmedSelect.match(/^["'].*["']$/) || 
             trimmedSelect.startsWith('&quot;') || 
             trimmedSelect.match(/^(true|false)\(\s*\)$/) ||
-            trimmedSelect.match(/^\d+$/) || // Pure numbers
+            trimmedSelect.match(/^\d+$/) ||
             trimmedSelect === 'true()' ||
             trimmedSelect === 'false()' ||
-            trimmedSelect.includes('/*') || // Wildcards like /*
-            trimmedSelect.match(/\*\[\d+\]/)) { // Positional like *[1]
+            trimmedSelect.includes('/*') ||
+            trimmedSelect.match(/\*\[\d+\]/) ||
+            !isVisualMappableExpression(trimmedSelect)) {
           console.log(`Skipping literal/function/wildcard value: ${select}`);
           return;
         }
@@ -431,17 +494,53 @@ ${elementsXML}
       }
     });
 
-    // Find all xsl:copy-of elements
+    // Find all xsl:copy-of elements (BW5/TIBCO field copies — visualize like value-of)
     const copyOfElements = this.getUniqueElements(
       Array.from(xmlDoc.querySelectorAll('copy-of')),
       this.getElementsByLocalName(xmlDoc, 'copy-of'),
     );
     console.log("Found", copyOfElements.length, "xsl:copy-of elements");
-    console.log("Skipping all xsl:copy-of elements - not supported in visual mapper (TIBCO-style behavior)");
-    
-    // TIBCO does not visualize copy-of operations - they copy entire structures
-    // Only value-of (individual field mappings) can be visualized
-    // So we skip all copy-of elements
+
+    copyOfElements.forEach((element, index) => {
+      const select = element.getAttribute("select");
+      if (!select) {
+        return;
+      }
+      const trimmedSelect = select.trim();
+      if (
+        trimmedSelect.match(/^["'].*["']$/) ||
+        trimmedSelect.startsWith('&quot;') ||
+        trimmedSelect.match(/^(true|false)\(\s*\)$/) ||
+        trimmedSelect.match(/^\d+$/) ||
+        trimmedSelect === 'true()' ||
+        trimmedSelect === 'false()' ||
+        trimmedSelect.includes('/*') ||
+        trimmedSelect.match(/\*\[\d+\]/) ||
+        !isVisualMappableExpression(trimmedSelect)
+      ) {
+        return;
+      }
+
+      const targetPath = this.getCopyOfTargetPath(element, trimmedSelect);
+      const isConditional = this.isInsideConditional(element);
+      const condition = isConditional ? this.getCondition(element) : undefined;
+      const paramName = this.getParameterName(trimmedSelect);
+
+      mappings.push({
+        sourcePath: trimmedSelect,
+        targetPath: targetPath || `output/copy${index + 1}`,
+        transformationType: TransformationTypes.COPY_OF,
+        expression: trimmedSelect,
+        isConditional,
+        condition,
+      });
+
+      console.log(`Copy-of mapping ${index + 1}:`, {
+        source: trimmedSelect,
+        target: targetPath,
+        isParameterRef: !!paramName,
+      });
+    });
 
     // Find all xsl:template elements
     const templateElements = this.getUniqueElements(
@@ -495,6 +594,21 @@ ${elementsXML}
       current = current.parentElement;
     }
     return undefined;
+  }
+
+  /** Target for xsl:copy-of: parent constructed element + leaf segment from select. */
+  private getCopyOfTargetPath(element: Element, select: string): string {
+    const parentPath = this.getTargetPath(element);
+    const pathAfterVar = select.replace(/^\$[\w-]+\//, '');
+    const leaf = pathAfterVar
+      .split('/')
+      .filter(Boolean)
+      .map((seg) => seg.replace(/^\w+:/, ''))
+      .pop() ?? '';
+    if (!leaf) {
+      return parentPath;
+    }
+    return parentPath ? `${parentPath}/${leaf}` : leaf;
   }
 
   private getTargetPath(element: Element): string {
@@ -571,6 +685,12 @@ ${elementsXML}
       console.log(` --- Mapping ${index + 1} ---`);
       console.log(` Source path: "${mapping.sourcePath}"`);
       console.log(` Target path: "${mapping.targetPath}"`);
+
+      const expression = mapping.expression || mapping.sourcePath;
+      if (!isVisualMappableExpression(expression)) {
+        console.log(` Skipping non-visual expression: "${expression}"`);
+        return;
+      }
       
       // Try to find matching nodes in the schemas
       const sourceNode = this.findNodeByPath(sourceNodes, mapping.sourcePath);
@@ -578,12 +698,14 @@ ${elementsXML}
 
       if (!sourceNode) {
         console.warn(` ⚠️ No source node found for path: "${mapping.sourcePath}"`);
+        return;
       } else {
         console.log(` ✓ Found source node: ${sourceNode.id}`);
       }
       
       if (!targetNode) {
         console.warn(` ⚠️ No target node found for path: "${mapping.targetPath}"`);
+        return;
       } else {
         console.log(` ✓ Found target node: ${targetNode.id}`);
       }
@@ -635,21 +757,14 @@ ${elementsXML}
   }
 
   private findNodeByPath(nodes: IXSDNode[], path: string): IXSDNode | null {
+    if (!isVisualMappableExpression(path)) {
+      return null;
+    }
+
     let extractedPath = path;
     
     if (extractedPath.includes('concat(')) {
-      const concatContent = extractedPath.match(/concat\s*\((.*)\)/s);
-      if (concatContent) {
-        const allArgs = concatContent[1];
-        const paramMatch = allArgs.match(/\$[_\w]+/);
-        if (paramMatch) {
-          extractedPath = paramMatch[0];
-          console.log(`Extracted parameter from concat: "${path}" -> "${extractedPath}"`);
-        } else {
-          console.log(`concat() with no parameter references - no node path`);
-          return null;
-        }
-      }
+      return null;
     }
     
     // Look for patterns: functionName($path, ...) or functionName($path)
@@ -714,15 +829,20 @@ ${elementsXML}
       console.log(`Extracted path from XPath function: "${path}" -> "${extractedPath}"`);
     }
     
-    // Clean the XSLT path: remove $variables, namespaces, predicates, slashes
+    // Clean the XSLT path: remove namespaces and predicates; keep $variable prefix when present
+    const hasVariablePrefix = /^\$[\w-]+\//.test(extractedPath);
     let cleanPath = extractedPath
-      .replace(/^\$[_\w]+\//, '')           // Remove $variable/
-      .replace(/^\/+/, '')                  // Remove leading slashes
-      .replace(/\w+\d*:/g, '')              // Remove namespace prefixes like tns:, tns1:, tns2:
+      .replace(/\w+\d*:/g, '')              // Remove namespace prefixes like pfx:, pfx2:
       .replace(/\[@[^\]]+\]/g, '')          // Remove predicates like [@attr='value']
       .replace(/\[[^\]]+\]/g, '')           // Remove array indices like [1]
       .replace(/\/\*$/g, '')                // Remove trailing wildcard like parameters/*
       .replace(/^\*$/g, '');                // Remove standalone wildcard
+
+    if (!hasVariablePrefix) {
+      cleanPath = cleanPath
+        .replace(/^\$[_\w]+\//, '')         // Remove $variable/ only when not a BW5 variable tree
+        .replace(/^\/+/, '');
+    }
 
     console.log(`Finding node for path: "${path}" -> cleaned: "${cleanPath}"`);
 
@@ -739,14 +859,13 @@ ${elementsXML}
 
     // Try exact path match first (strip namespaces from node path for comparison)
     for (const node of nodes) {
-      const nodePath = node.path.replace(/^\/+/, '').replace(/\w+\d*:/g, ''); // Strip namespaces
-      if (nodePath === cleanPath || nodePath.endsWith('/' + cleanPath)) {
+      if (pathsReferToSameNode(node.path, path) || pathsReferToSameNode(node.path, cleanPath)) {
         console.log(`Exact match found: ${node.id} (${node.path})`);
         return node;
       }
     }
 
-    // Try partial path match (for nested structures)
+    // Try partial path match (for nested structures) — same segment count only
     const pathParts = cleanPath.split('/').filter(p => p);
     
     const findRecursive = (currentNodes: IXSDNode[], remainingParts: string[]): IXSDNode | null => {
@@ -755,10 +874,8 @@ ${elementsXML}
       const targetName = remainingParts[remainingParts.length - 1];
       
       for (const node of currentNodes) {
-        // Check if this node's name matches the target
         if (node.name === targetName) {
-          // Verify the full path matches by comparing all parts (strip namespaces)
-          const nodePathParts = node.path.split('/').filter(p => p).map(p => p.replace(/\w+\d*:/, ''));
+          const nodePathParts = node.path.split('/').filter(p => p).map(p => p.replace(/^\$/, "").replace(/\w+:/, ''));
           const matches = pathParts.every((part, idx) => {
             const nodePartIdx = nodePathParts.length - pathParts.length + idx;
             return nodePartIdx >= 0 && nodePathParts[nodePartIdx] === part;
@@ -770,7 +887,6 @@ ${elementsXML}
           }
         }
         
-        // Search in children
         if (node.children && node.children.length > 0) {
           const found = findRecursive(node.children, remainingParts);
           if (found) {return found;}

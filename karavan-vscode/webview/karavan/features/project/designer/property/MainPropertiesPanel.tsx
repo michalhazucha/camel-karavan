@@ -33,11 +33,13 @@ export function MainPropertiesPanel() {
     const activeTabKeyRef = React.useRef(activeTabKey);
     activeTabKeyRef.current = activeTabKey;
 
+    const canShowMapper = Boolean(selectedStep && isMapperStep(selectedStep));
+
     React.useEffect(() => {
-        if (selectedStep && isMapperStep(selectedStep)) {
-            setActiveTabKey("mapper");
+        if (!canShowMapper) {
+            setActiveTabKey("properties");
         }
-    }, [(selectedStep as any)?.uuid]);
+    }, [canShowMapper, (selectedStep as any)?.uuid]);
 
     const scheduleMapperEditDialog = React.useCallback((connectionId: string) => {
         window.setTimeout(() => {
@@ -101,7 +103,9 @@ export function MainPropertiesPanel() {
                       role="proeprty-type"
                 >
                     <Tab eventKey={'properties'} title={getTab('Properties', 'properties')} aria-label="Properties"/>
-                    <Tab eventKey={'mapper'} title={getTab('Mapper', 'mapper')} aria-label="Mapper"/>
+                    {canShowMapper && (
+                        <Tab eventKey={'mapper'} title={getTab('Mapper', 'mapper')} aria-label="Mapper"/>
+                    )}
                 </Tabs>
             </div>
         )
@@ -113,7 +117,7 @@ export function MainPropertiesPanel() {
             {getPropertiesPanelTabs()}
             <ErrorBoundaryWrapper onError={error => console.error(error)}>
                 {activeTabKey === 'properties' && <DslProperties expressionEditor={ExpressionEditor}/> }
-                {activeTabKey === 'mapper' && <MapperPanel/> }
+                {activeTabKey === 'mapper' && canShowMapper && <MapperPanel/> }
             </ErrorBoundaryWrapper>
         </div>
     )

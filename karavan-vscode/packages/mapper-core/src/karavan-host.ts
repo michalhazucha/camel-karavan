@@ -1,8 +1,25 @@
+export interface KaravanSourceVariable {
+    /** Label in mapper tree, usually `$` + bindingName (XSLT param name). */
+    variableReceive: string;
+    /** BW5 variable name used in XSLT (`xsl:param` / `$messageVar`). */
+    bindingName?: string;
+    /** Karavan `variableReceive` on the producing step (may differ from bindingName). */
+    stepVariableReceive?: string;
+    schemaPath?: string;
+    kind?: "upstream" | "xslt-param";
+}
+
 export interface KaravanMapperContext {
     xslt: string;
+    /** Workspace path to XSLT file when mapping is stored in inputBinding (BW5 CallProcess, etc.). */
+    xsltPath?: string;
     sourcePath?: string;
     targetPath?: string;
+    /** BW5 upstream process variables (from variableReceive on earlier steps). */
+    sourceVariables?: KaravanSourceVariable[];
     workspaceXsdFiles: string[];
+    /** True only for dedicated Mapper / Transform steps (not CallProcess with inputBinding). */
+    allowLoadXsd?: boolean;
 }
 
 export interface KaravanMapperSavePayload {
