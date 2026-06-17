@@ -231,6 +231,7 @@ function App({ host }: AppProps) {
   const [originalLoadedXSLT, setOriginalLoadedXSLT] = useState<string | null>(null)
   const [activeSchemaPaths, setActiveSchemaPaths] = useState<{ source?: string; target?: string }>({})
   const [allowLoadXsd, setAllowLoadXsd] = useState(!host)
+  const [activityName, setActivityName] = useState("")
   /** Selection paths mirrored from the primary mapper (bottom panel has no XSD trees). */
   const [syncedSelectionPaths, setSyncedSelectionPaths] = useState<{
     source?: string;
@@ -321,6 +322,7 @@ function App({ host }: AppProps) {
     setSelectedTarget(null);
     const ctx = host.getContext();
     setAllowLoadXsd(ctx?.allowLoadXsd ?? false);
+    setActivityName(ctx?.activityName ?? "");
     setActiveSchemaPaths({
       source: ctx?.sourcePath,
       target: ctx?.targetPath,
@@ -403,6 +405,7 @@ function App({ host }: AppProps) {
       }
       if (event.type === "contextChanged" && event.context) {
         setAllowLoadXsd(event.context.allowLoadXsd ?? false);
+        setActivityName(event.context.activityName ?? "");
         setActiveSchemaPaths({
           source: event.context.sourcePath,
           target: event.context.targetPath,
@@ -729,12 +732,7 @@ function App({ host }: AppProps) {
     }
   }, [isSecondaryPanel, vscode]);
 
-  //TODO: SOLVE IMPORT XSD TO XSD AND REFERENCE CALLING. HOW TO DO STRUCTURE TO MAKE IT ALL WORK. IS IT POSSIBLE TO CREATE PROJECT WORKSPACE WHERE WILL BE ALL XSDS RELATED AND THEN CONNECT THE IMPORT
-  //TODO: FIX THE PREVIEW IN ANOTHER TAB AND CHANGE. DO SOMETHING LIKE PRESAVE AS XSLT THEN UPDATE IT AND THEN ON SAVE REFRESH THE WINDOW WITH IMPORTED AND SHOW CHANGED XSLT MAPPING - WORKS NOW, Better to refactor. Right now saves temp file to extension temp folder
-  //TODO: SEARCH FOR APACHE CAMEL CODE AND HOW TO DO THE INTEGRATION FOR THIS MAPPER. 
-  //TODO: INVESTIGATE WSDL. IS IT POSSIBLE AND HOW BIG CHANGE IS IT TO INTEGRATE WSDL INTO THE MAPPER
-  //TODO: REFACTOR WHOLE CODE STRUCTURE OF GENERATORS AND PARSERS SO IT WILL BE SCALABLE FOR MORE PEOPLE TO WORK ON. ALSO REFACTOR App.tsx to smaller pieces
-  // Standalone mode only — embedded Karavan loads schemas from activity context.
+
   useEffect(() => {
     if (host) {
       return;
@@ -1497,7 +1495,12 @@ function App({ host }: AppProps) {
           </TabsList> */}
 
           {/* Tree View Tab */}
-          <div className={cn(isKaravanEmbedded ? "flex min-h-0 flex-1 flex-col" : "mt-6")}>
+            <div className={cn(isKaravanEmbedded ? "flex min-h-0 flex-1 flex-col pb-6" : "mt-6")}>
+              <Card className="flex flex-row w-full justify-center items-center pb-6 ">
+                <h1 className="text-lg text-muted-foreground font-bold">
+                  {isKaravanEmbedded && activityName ? activityName : "Mapping"}
+                </h1>
+                </Card>
             <div
               ref={treeContainerRef}
               className={cn(
@@ -1510,9 +1513,11 @@ function App({ host }: AppProps) {
                 containerRef={treeContainerRef}
                 getConnectionColor={getConnectionColor}
                 highlightedConnectionId={highlightedConnectionId}
-              />
+                />
+                
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2 h-full mb-10">
-                {/* Source Schema */}
+                  {/* Source Schema */}
+                  
                 <Card className={cn("gap-2 p-4 py-4", isKaravanEmbedded && "min-h-0")}>
                   <div className="flex items-center justify-between pb-4">
                     <h2 className="text-xl font-semibold">Source Schema</h2>

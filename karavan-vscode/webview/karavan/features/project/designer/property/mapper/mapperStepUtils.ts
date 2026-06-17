@@ -4,6 +4,7 @@ import {
     ToDefinition,
 } from "@karavan-core/model/CamelDefinition";
 import { CamelElement } from "@karavan-core/model/IntegrationDefinition";
+import { CamelUi } from "../../utils/CamelUi";
 
 export type MapperConfig = {
     sourcePath?: string;
@@ -161,4 +162,13 @@ export const isMapperStep = (step: unknown): boolean => {
     }
     const expressionLanguage = (s as any)?.expression?.language?.language;
     return expressionLanguage === "xslt";
+};
+
+/** Same label as the route designer activity header (description, else kamelet/component title). */
+export const getMapperActivityDisplayName = (step: CamelElement): string => {
+    const description = ((step as any)?.description as string | undefined)?.trim();
+    if (description) {
+        return description;
+    }
+    return CamelUi.getElementTitle(step);
 };

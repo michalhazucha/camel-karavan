@@ -31,6 +31,7 @@ import {
     getMapperXslt,
     isDedicatedMapperActivity,
     clearMapperNoteMarker,
+    getMapperActivityDisplayName,
 } from "./mapperStepUtils";
 import type { Integration } from "@karavan-core/model/IntegrationDefinition";
 
@@ -122,6 +123,7 @@ export const buildMapperContext = (
     );
     return {
         xslt: inlineXslt,
+        activityName: getMapperActivityDisplayName(step),
         xsltPath: resolvedXsltPath,
         sourcePath: resolvedSourcePath,
         targetPath: resolveMapperAssetPath(targetPath, integrationDir),

@@ -11,6 +11,8 @@ export interface KaravanSourceVariable {
 
 export interface KaravanMapperContext {
     xslt: string;
+    /** Display name of the selected activity (from description or kamelet title). */
+    activityName?: string;
     /** Workspace path to XSLT file when mapping is stored in inputBinding (BW5 CallProcess, etc.). */
     xsltPath?: string;
     sourcePath?: string;
