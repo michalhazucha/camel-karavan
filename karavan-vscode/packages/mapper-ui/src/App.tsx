@@ -457,9 +457,6 @@ function App({ host }: AppProps) {
     if (!isRealSchema(project.sourceSchema, PLACEHOLDER_SOURCE)) {
       return;
     }
-    if (!isRealSchema(project.targetSchema, PLACEHOLDER_TARGET)) {
-      return;
-    }
     pendingXsltRef.current = null;
     schemasAwaitingXsltRef.current = false;
     void applyXsltContent(xslt);
@@ -506,10 +503,7 @@ function App({ host }: AppProps) {
         }
 
         if (!sourceSchema || !targetSchema) {
-          return {
-            ...prev,
-            connections: [],
-          };
+          return prev;
         }
 
         const augmentedSource = augmentSourceSchemaFromMappings(
@@ -610,43 +604,12 @@ function App({ host }: AppProps) {
         document.querySelectorAll(".karavan-mapper-root").forEach((el) => {
           el.classList.toggle("dark", isDark)
         })
-      } else if (event.data?.type === "xsltUpdated") {
-        // XSLT was edited and saved in VS Code editor
-        console.log("📥 Received updated XSLT from editor");
+      } else if (event.data?.type === "xsltUpdated" || event.data?.command === "xsltUpdated") {
         const updatedXSLT = event.data.content;
-        
-        // Parse the updated XSLT and reload mappings
-        try {
-          const mappings = xsltParser.parse(updatedXSLT);
-          
-          // Reconstruct schemas if needed
-          const { sourceXSD, targetXSD } = xsltParser.constructSchemasFromMappings(mappings);
-          const xsdParser = new XSDParser();
-          const sourceSchema = xsdParser.parse(sourceXSD);
-          const targetSchema = xsdParser.parse(targetXSD);
-          
-          // Convert to connections
-          const connections = sourceSchema.nodes && targetSchema.nodes && xsltParser.convertToConnections(
-            mappings,
-            sourceSchema.nodes,
-            targetSchema.nodes
-          );
-          
-          // Update state
-          setProject((prev) => ({
-            ...prev,
-            sourceSchema,
-            targetSchema,
-            connections: connections as IMappingConnection[]
-          }));
-          
+        if (updatedXSLT?.trim()) {
           setGeneratedXSLT(updatedXSLT);
-          setOriginalLoadedXSLT(updatedXSLT);
           setShowXSLT(true);
-          
-          console.log("✅ Mappings reloaded from updated XSLT");
-        } catch (error) {
-          console.error("❌ Error parsing updated XSLT:", error);
+          void applyXsltContent(updatedXSLT, { silent: true });
         }
       } else if (event.data?.type === "mapperSelectionStateSync") {
         if (transformationDialogOpen) {
@@ -1028,6 +991,7 @@ function App({ host }: AppProps) {
 
     setGeneratedXSLT(xslt)
     setShowXSLT(true)
+    lastXsltContentRef.current = xslt
   }
 
   const handleDeleteMapping = (connectionId: string) => {
@@ -1194,8 +1158,10 @@ function App({ host }: AppProps) {
     }
 
     vscode.postMessage({
+      command: "openXSLTPreview",
       type: "openXSLTPreview",
       content: xslt,
+      draft: true,
     });
   };
 
@@ -1203,23 +1169,15 @@ function App({ host }: AppProps) {
     if (!host) {
       return;
     }
-    if (!project.sourceSchema || !project.targetSchema) {
-      alert("Please load both source and target schemas before saving.");
+    const xslt = generatedXSLT?.trim() || lastXsltContentRef.current?.trim() || "";
+    if (!xslt) {
+      alert("Generate or edit XSLT first, then save to activity.");
       return;
     }
-    const xslt = generator.generate(
-      project.connections as any,
-      project.targetSchema.nodes as any,
-      project.sourceSchema.targetNamespace,
-      project.targetSchema.targetNamespace,
-    );
     setGeneratedXSLT(xslt);
     setShowXSLT(true);
     setOriginalLoadedXSLT(null);
-    if (!xslt?.trim()) {
-      alert("Generate or load XSLT before saving to the activity.");
-      return;
-    }
+    lastXsltContentRef.current = xslt;
     const ctx = host.getContext();
     host.saveToActivity({
       xslt,

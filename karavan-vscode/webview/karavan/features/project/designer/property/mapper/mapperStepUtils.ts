@@ -51,6 +51,27 @@ export const serializeMapperConfig = (note: string | undefined, config: MapperCo
     return [baseNote, serializedConfig].filter(Boolean).join("\n");
 };
 
+/** Remove Karavan mapper metadata from step note; keep human-authored note text. */
+export const clearMapperNoteMarker = (note?: string): string | undefined => {
+    if (!note?.trim()) {
+        return undefined;
+    }
+    const base = note.split(MAPPER_NOTE_PREFIX)[0].trim();
+    return base || undefined;
+};
+
+const getStepInputBinding = (step?: CamelElement): string => {
+    const params = (step as { parameters?: Record<string, unknown> } | undefined)?.parameters ?? {};
+    const binding = params.inputBinding;
+    if (typeof binding === "string") {
+        return binding.trim();
+    }
+    if (binding && typeof binding === "object" && "expression" in (binding as object)) {
+        return String((binding as { expression?: string }).expression ?? "").trim();
+    }
+    return "";
+};
+
 export const isKameletMapperUri = (uri?: string): boolean => {
     if (!uri) {
         return false;
@@ -99,6 +120,10 @@ export const hasInputBinding = (step: unknown): boolean => {
 };
 
 export const getMapperXslt = (step?: CamelElement): string => {
+    const fileBinding = getStepInputBinding(step);
+    if (fileBinding && /\.(xsl|xslt)$/i.test(fileBinding)) {
+        return "";
+    }
     const noteConfig = parseMapperConfig((step as any)?.note);
     const expression = (step as any)?.expression as ExpressionDefinition | undefined;
     const language = expression?.language as LanguageExpression | undefined;
@@ -135,5 +160,5 @@ export const isMapperStep = (step: unknown): boolean => {
         return true;
     }
     const expressionLanguage = (s as any)?.expression?.language?.language;
-    return expressionLanguage === "xslt" || Object.keys(parseMapperConfig((s as any).note)).length > 0;
+    return expressionLanguage === "xslt";
 };

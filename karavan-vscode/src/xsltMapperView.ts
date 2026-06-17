@@ -19,6 +19,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
+import { openXsltEditorWithLiveSync } from "./xsltEditorLiveSync";
 
 const page = "xslt-mapper";
 const KARAVAN_PANELS: Map<string, vscode.WebviewPanel> = new Map<string, vscode.WebviewPanel>();
@@ -492,51 +493,50 @@ export class XsltMapperView {
     }
 
     private bindMapperPanelLifecycle(panel: vscode.WebviewPanel): void {
-        let tempXsltFilePath: string | undefined;
-        let fileWatcher: vscode.Disposable | undefined;
+        let openedEditor: { absolutePath: string; isTemp: boolean; watcher: vscode.Disposable } | undefined;
 
         panel.onDidDispose(() => {
-            if (fileWatcher) {
-                fileWatcher.dispose();
+            openedEditor?.watcher.dispose();
+            if (openedEditor?.isTemp && openedEditor.absolutePath && fs.existsSync(openedEditor.absolutePath)) {
+                fs.unlinkSync(openedEditor.absolutePath);
             }
-            if (tempXsltFilePath && fs.existsSync(tempXsltFilePath)) {
-                fs.unlinkSync(tempXsltFilePath);
-            }
+            openedEditor = undefined;
         });
 
         panel.webview.onDidReceiveMessage(async (message) => {
-            if (message.type !== "openXSLTPreview") {
+            const isOpenPreview =
+                message?.type === "openXSLTPreview"
+                || message?.command === "openXSLTPreview";
+            if (!isOpenPreview) {
                 return;
             }
 
             const xsltContent: string = typeof message.content === "string" ? message.content : "";
-            if (!xsltContent) {
+            if (!xsltContent.trim() && !message.filePath?.trim()) {
                 vscode.window.showWarningMessage("XSLT mapper did not provide content to preview.");
                 return;
             }
 
             try {
-                tempXsltFilePath = path.join(os.tmpdir(), `karavan-xsltmapper-${Date.now()}.xslt`);
-                fs.writeFileSync(tempXsltFilePath, xsltContent, "utf8");
-
-                const doc = await vscode.workspace.openTextDocument(tempXsltFilePath);
-                await vscode.window.showTextDocument(doc, {
-                    preview: false,
-                    viewColumn: vscode.ViewColumn.Beside,
-                });
-
-                if (fileWatcher) {
-                    fileWatcher.dispose();
+                openedEditor?.watcher.dispose();
+                if (openedEditor?.isTemp && openedEditor.absolutePath && fs.existsSync(openedEditor.absolutePath)) {
+                    fs.unlinkSync(openedEditor.absolutePath);
                 }
-                fileWatcher = vscode.workspace.onDidSaveTextDocument((savedDoc) => {
-                    if (savedDoc.uri.fsPath === tempXsltFilePath) {
-                        const updated = fs.readFileSync(tempXsltFilePath!, "utf8");
-                        panel.webview.postMessage({
-                            type: "xsltUpdated",
-                            content: updated,
-                        });
-                    }
+
+                const opened = await openXsltEditorWithLiveSync(panel.webview, {
+                    content: xsltContent,
+                    filePath: typeof message.filePath === "string" ? message.filePath : undefined,
+                    integrationDir: typeof message.integrationDir === "string" ? message.integrationDir : undefined,
+                    integrationFullPath: typeof message.integrationFullPath === "string"
+                        ? message.integrationFullPath
+                        : undefined,
+                    draft: message.draft !== false,
                 });
+                if (!opened) {
+                    vscode.window.showWarningMessage("XSLT mapper did not provide content to preview.");
+                    return;
+                }
+                openedEditor = opened;
             } catch (error: any) {
                 vscode.window.showErrorMessage(`Failed to open XSLT preview: ${error?.message ?? error}`);
             }

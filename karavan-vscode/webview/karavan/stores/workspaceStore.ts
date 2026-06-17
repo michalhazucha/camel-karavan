@@ -38,6 +38,18 @@ export const useWorkspaceStore = createWithEqualityFn((set) => ({
             return { fileContents };
         });
     },
+    clearWorkspaceFileContent: (relativePath: string) => {
+        const normalized = relativePath.replace(/\\/g, '/');
+        set((state) => {
+            const fileContents = { ...state.fileContents };
+            delete fileContents[normalized];
+            const base = normalized.split('/').pop();
+            if (base && base !== normalized) {
+                delete fileContents[base];
+            }
+            return { fileContents };
+        });
+    },
     reset: () => {
         set({ files: [], fileContents: {}, integrationDir: "", integrationFullPath: "", isLoaded: false });
     },

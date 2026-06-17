@@ -20,7 +20,9 @@ import {
     resolvePathAgainstIntegrationDir,
     workspaceFileLookupKeys,
     coercePropertyScalar,
+    storedPathForWorkspaceRequest,
 } from "@/karavan/utils/workspaceFileResolver";
+import { requestWriteWorkspaceFile } from "@/karavan/utils/workspaceApi";
 import {
     deriveMapperPaths,
     buildMapperSourceVariables,
@@ -28,10 +30,7 @@ import {
 import {
     getMapperXslt,
     isDedicatedMapperActivity,
-    isMapperStep,
-    parseMapperConfig,
-    serializeMapperConfig,
-    type MapperConfig,
+    clearMapperNoteMarker,
 } from "./mapperStepUtils";
 import type { Integration } from "@karavan-core/model/IntegrationDefinition";
 
@@ -74,6 +73,22 @@ const resolveMapperAssetPath = (path: string | undefined, integrationDir: string
     return `${dir}/${normalized}`;
 };
 
+const cacheWorkspaceFileContent = (bindingPath: string, content: string): void => {
+    const keys = workspaceFileLookupKeys(bindingPath, null);
+    const store = useWorkspaceStore.getState();
+    keys.forEach((key) => store.setWorkspaceFileContent(key, content));
+    window.dispatchEvent(
+        new CustomEvent("karavan-workspace-file-updated", {
+            detail: {
+                relativePath: bindingPath,
+                requestedPath: bindingPath,
+                requestedRole: "xslt",
+                content,
+            },
+        }),
+    );
+};
+
 export const buildMapperContext = (
     step: CamelElement | undefined,
     workspaceFiles: string[],
@@ -83,10 +98,9 @@ export const buildMapperContext = (
     if (!step) {
         return null;
     }
-    const noteConfig = parseMapperConfig((step as any)?.note);
     const derived = deriveMapperPaths(step, integration);
-    const sourcePath = noteConfig.sourcePath?.trim() || derived.sourcePath;
-    const targetPath = noteConfig.targetPath?.trim() || derived.targetPath;
+    const sourcePath = derived.sourcePath;
+    const targetPath = derived.targetPath;
     const xsltPath = derived.xsltBindingPath;
     const inlineXslt = getMapperXslt(step);
     const resolvedSourcePath = resolveMapperAssetPath(sourcePath, integrationDir);
@@ -120,13 +134,9 @@ export const buildMapperContext = (
 export const saveMapperToActivity = (
     mapperStep: CamelElement,
     payload: KaravanMapperSavePayload,
+    integrationDir = "",
 ): CamelElement => {
     const clone = CamelUtil.cloneStep(mapperStep) as any;
-    const prevNoteConfig = parseMapperConfig((mapperStep as any)?.note);
-    const config: MapperConfig = {
-        sourcePath: payload.sourcePath?.trim() || prevNoteConfig.sourcePath?.trim() || undefined,
-        targetPath: payload.targetPath?.trim() || prevNoteConfig.targetPath?.trim() || undefined,
-    };
 
     if (clone.dslName === "TransformDefinition") {
         clone.expression = new ExpressionDefinition({
@@ -141,17 +151,21 @@ export const saveMapperToActivity = (
         const existingKey = knownXsltKeys.find((k) => Object.prototype.hasOwnProperty.call(parameters, k));
         const key = existingKey ?? "inputBinding";
         const prevBinding = coercePropertyScalar(parameters[key]);
-        if (prevBinding && /\.(xsl|xslt)$/i.test(prevBinding)) {
-            // BW5 kamelet: keep file reference — XSLT content is loaded from inputBinding path at runtime
+        const usesFileBinding = Boolean(prevBinding && /\.(xsl|xslt)$/i.test(prevBinding));
+        if (usesFileBinding) {
             parameters[key] = prevBinding;
+            const storedWritePath = storedPathForWorkspaceRequest(prevBinding);
+            if (storedWritePath) {
+                cacheWorkspaceFileContent(prevBinding, payload.xslt);
+                requestWriteWorkspaceFile(storedWritePath, payload.xslt);
+            }
         } else {
             parameters[key] = payload.xslt;
         }
         clone.parameters = parameters;
-        config.xslt = payload.xslt;
     }
 
-    clone.note = serializeMapperConfig(clone.note, config);
+    clone.note = clearMapperNoteMarker((mapperStep as any)?.note);
     return clone as CamelElement;
 };
 
@@ -220,7 +234,20 @@ export const createKaravanMapperHost = (
     },
 
     openXsltInEditor: (content) => {
-        vscode?.postMessage({ command: "openXSLTPreview", content });
+        const step = getStep();
+        const { files, integrationDir, integrationFullPath } = useWorkspaceStore.getState();
+        const integration = useIntegrationStore.getState().integration;
+        const ctx = step
+            ? buildMapperContext(step, files ?? [], integrationDir, integration)
+            : null;
+        vscode?.postMessage({
+            command: "openXSLTPreview",
+            content,
+            filePath: ctx?.xsltPath,
+            draft: true,
+            integrationDir: integrationDir || undefined,
+            integrationFullPath: integrationFullPath || undefined,
+        });
     },
 
     saveToActivity: (payload) => {
@@ -234,12 +261,13 @@ export const createKaravanMapperHost = (
             return;
         }
         const tab = useDesignerStore.getState().tab;
-        const updated = saveMapperToActivity(step, payload);
+        const { integrationDir } = useWorkspaceStore.getState();
+        const updated = saveMapperToActivity(step, payload, integrationDir);
         applyMapperStepToIntegration(updated, tab);
-        const { files, integrationDir } = useWorkspaceStore.getState();
+        const { files } = useWorkspaceStore.getState();
         const integration = useIntegrationStore.getState().integration;
         emit({ type: "contextChanged", context: buildMapperContext(updated, files ?? [], integrationDir, integration) });
-        EventBus.sendAlert("Mapper", "XSLT saved to the activity.", "success");
+        EventBus.sendAlert("Mapper", "XSLT applied to activity (inputBinding file updated).", "success");
     },
 
     subscribe: (handler) => {
@@ -252,6 +280,11 @@ export const createKaravanMapperHost = (
                 return;
             }
             switch (msg.command) {
+                case "xsltUpdated":
+                    if (typeof msg.content === "string" && msg.content.trim()) {
+                        handler({ type: "xsltUpdated", content: msg.content });
+                    }
+                    break;
                 case "mapperWorkspaceFileSelected":
                     handler({
                         type: "workspaceFile",
@@ -321,6 +354,15 @@ export const createKaravanMapperHost = (
                     break;
                 }
                 case "mapperWorkspaceFilePickCanceled":
+                    break;
+                case "workspaceFileWriteFailed":
+                    EventBus.sendAlert(
+                        "Mapper",
+                        typeof msg.error === "string"
+                            ? `Failed to save XSLT: ${msg.error}`
+                            : "Failed to save XSLT to workspace file.",
+                        "danger",
+                    );
                     break;
                 default:
                     break;

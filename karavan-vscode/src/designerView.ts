@@ -18,7 +18,6 @@ import { CamelDefinitionYaml } from "@karavan-core/api/CamelDefinitionYaml";
 import { BeanFactoryDefinition } from "@karavan-core/model/CamelDefinition";
 import { Integration, KameletTypes, MetadataLabels } from "@karavan-core/model/IntegrationDefinition";
 import * as fs from "fs";
-import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 import { commands, ExtensionContext, Uri, ViewColumn, WebviewPanel, WebviewPanelOnDidChangeViewStateEvent, window } from "vscode";
@@ -26,13 +25,14 @@ import { resolveStoredPath } from "./propertiesResolver";
 import * as utils from "./utils";
 import { getWebviewContent } from "./webviewContent";
 import { getEmbeddedMapperHtml, resolveXsltMapperBuildPath, XsltMapperView } from "./xsltMapperView";
+import { openXsltEditorWithLiveSync } from "./xsltEditorLiveSync";
 
 const KARAVAN_LOADED = "karavan:loaded";
 const KARAVAN_PANELS: Map<string, WebviewPanel> = new Map<string, WebviewPanel>();
 
 export class DesignerView {
 
-    private mapperPreviewFiles: Map<string, { filePath: string, watcher?: vscode.Disposable }> = new Map();
+    private mapperPreviewFiles: Map<string, { filePath: string; watcher?: vscode.Disposable; isTemp?: boolean }> = new Map();
 
     constructor(private context: ExtensionContext, private rootPath?: string, private xsltMapperView?: XsltMapperView) {
 
@@ -170,8 +170,25 @@ export class DesignerView {
                                 message.requestedRole,
                             );
                             break;
+                        case 'writeWorkspaceFile':
+                            this.writeWorkspaceFile(
+                                panel,
+                                message.relativePath,
+                                message.content,
+                                message.integrationDir,
+                                message.integrationFullPath,
+                            );
+                            break;
                         case 'openXSLTPreview':
-                            this.openEmbeddedMapperPreview(panel, relativePath, message.content);
+                            this.openEmbeddedMapperPreview(
+                                panel,
+                                relativePath,
+                                message.content,
+                                message.filePath,
+                                message.integrationDir,
+                                message.integrationFullPath,
+                                message.draft !== false,
+                            );
                             break;
                         case 'getEmbeddedMapperHtml':
                             this.sendEmbeddedMapperHtml(panel);
@@ -197,7 +214,7 @@ export class DesignerView {
             panel.onDidDispose(() => {
                 const preview = this.mapperPreviewFiles.get(relativePath);
                 preview?.watcher?.dispose();
-                if (preview?.filePath && fs.existsSync(preview.filePath)) {
+                if (preview?.isTemp && preview?.filePath && fs.existsSync(preview.filePath)) {
                     fs.unlinkSync(preview.filePath);
                 }
                 this.mapperPreviewFiles.delete(relativePath);
@@ -452,6 +469,36 @@ export class DesignerView {
         }
     }
 
+    writeWorkspaceFile(
+        panel: WebviewPanel,
+        relativePath: string,
+        content: string,
+        integrationDir?: string,
+        integrationFullPath?: string,
+    ) {
+        void utils.writeWorkspaceMappedFile(relativePath, content, integrationDir, integrationFullPath)
+            .then(({ cacheKey, requestedPath }) => {
+                console.log('[XKaravan] writeWorkspaceFile ok', cacheKey, `(${content.length} chars)`);
+                panel.webview.postMessage({
+                    command: 'workspaceFileContent',
+                    relativePath: cacheKey,
+                    requestedPath,
+                    requestedRole: 'xslt',
+                    content,
+                });
+            })
+            .catch((error: unknown) => {
+                const err = error instanceof Error ? error.message : String(error);
+                console.error('[XKaravan]', err);
+                panel.webview.postMessage({
+                    command: 'workspaceFileWriteFailed',
+                    relativePath,
+                    requestedPath: relativePath,
+                    error: err,
+                });
+            });
+    }
+
     async sendEmbeddedMapperHtml(panel: WebviewPanel) {
         try {
             const buildPath = await resolveXsltMapperBuildPath(false);
@@ -501,8 +548,16 @@ export class DesignerView {
         }
     }
 
-    async openEmbeddedMapperPreview(panel: WebviewPanel, panelKey: string, content?: string) {
-        if (!content) {
+    async openEmbeddedMapperPreview(
+        panel: WebviewPanel,
+        panelKey: string,
+        content?: string,
+        filePath?: string,
+        integrationDir?: string,
+        integrationFullPath?: string,
+        draft = true,
+    ) {
+        if (!content?.trim() && !filePath?.trim()) {
             window.showWarningMessage("XSLT mapper did not provide content to preview.");
             return;
         }
@@ -510,30 +565,27 @@ export class DesignerView {
         try {
             const previous = this.mapperPreviewFiles.get(panelKey);
             previous?.watcher?.dispose();
-            if (previous?.filePath && fs.existsSync(previous.filePath)) {
+            if (previous?.isTemp && previous.filePath && fs.existsSync(previous.filePath)) {
                 fs.unlinkSync(previous.filePath);
             }
 
-            const tempXsltFilePath = path.join(os.tmpdir(), `karavan-xsltmapper-${Date.now()}.xslt`);
-            fs.writeFileSync(tempXsltFilePath, content, "utf8");
-
-            const doc = await vscode.workspace.openTextDocument(tempXsltFilePath);
-            await window.showTextDocument(doc, {
-                preview: false,
-                viewColumn: ViewColumn.Beside,
+            const opened = await openXsltEditorWithLiveSync(panel.webview, {
+                content,
+                filePath,
+                integrationDir,
+                integrationFullPath,
+                draft,
             });
+            if (!opened) {
+                window.showWarningMessage("XSLT mapper did not provide content to preview.");
+                return;
+            }
 
-            const watcher = vscode.workspace.onDidSaveTextDocument((savedDoc) => {
-                if (savedDoc.uri.fsPath === tempXsltFilePath) {
-                    const updated = fs.readFileSync(tempXsltFilePath, "utf8");
-                    panel.webview.postMessage({
-                        command: 'xsltUpdated',
-                        content: updated,
-                    });
-                }
+            this.mapperPreviewFiles.set(panelKey, {
+                filePath: opened.absolutePath,
+                watcher: opened.watcher,
+                isTemp: opened.isTemp,
             });
-
-            this.mapperPreviewFiles.set(panelKey, { filePath: tempXsltFilePath, watcher });
         } catch (error: any) {
             window.showErrorMessage(`Failed to open XSLT preview: ${error?.message ?? error}`);
         }

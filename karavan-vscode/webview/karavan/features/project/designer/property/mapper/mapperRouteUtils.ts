@@ -5,10 +5,10 @@ import { ToDefinition } from "@karavan-core/model/CamelDefinition";
 import { CamelElement, Integration } from "@karavan-core/model/IntegrationDefinition";
 import { coercePropertyScalar } from "@/karavan/utils/workspaceFileResolver";
 import {
-    parseMapperConfig,
+    clearMapperNoteMarker,
+    MAPPER_NOTE_PREFIX,
     sanitizeActivityFileName,
     sanitizeVariableReceive,
-    serializeMapperConfig,
 } from "./mapperStepUtils";
 
 export const MAPPER_KAMELET_URI = "kamelet:activity-mapper-action";
@@ -184,6 +184,41 @@ export const getKameletParameterPath = (step: CamelElement, ...keys: string[]): 
     return "";
 };
 
+/** BW5: inputBinding → xslt/…_input.xslt; mapper target tree uses xsd/…_input.xsd. */
+export const inputBindingToInputXsdPath = (binding: string): string | undefined => {
+    const trimmed = binding.trim();
+    if (!trimmed || !/\.xslt?$/i.test(trimmed)) {
+        return undefined;
+    }
+    const hasFilePrefix = /^file:/i.test(trimmed);
+    const path = hasFilePrefix ? trimmed.replace(/^file:/i, "") : trimmed;
+    const converted = path
+        .replace(/\\/g, "/")
+        .replace(/\/xslt\//gi, "/xsd/")
+        .replace(/\.xslt$/i, ".xsd")
+        .replace(/\.xsl$/i, ".xsd");
+    if (converted === path.replace(/\\/g, "/")) {
+        return undefined;
+    }
+    return hasFilePrefix ? `file:${converted}` : converted;
+};
+
+/** Repair legacy mapper notes that stored the XSLT path as targetPath. */
+export const sanitizeMapperTargetPath = (path?: string): string | undefined => {
+    if (!path?.trim()) {
+        return undefined;
+    }
+    const trimmed = path.trim();
+    if (/\.xslt?$/i.test(trimmed)) {
+        return inputBindingToInputXsdPath(trimmed)
+            ?? trimmed
+                .replace(/\\/g, "/")
+                .replace(/\/xslt\//gi, "/xsd/")
+                .replace(/\.xslt?$/i, ".xsd");
+    }
+    return trimmed;
+};
+
 export interface DerivedMapperPaths {
     sourcePath?: string;
     targetPath?: string;
@@ -191,14 +226,13 @@ export interface DerivedMapperPaths {
 }
 
 /**
- * TIBCO-like defaults: target from outputSchema / note; source from upstream steps;
- * XSLT from inputBinding (BW5 kamelet) or inline expression.
+ * TIBCO-like defaults: target from inputSchema / inputBinding convention; source from upstream steps;
+ * XSLT from inputBinding (BW5 kamelet) or inline expression. Does not use step note.
  */
 export const deriveMapperPaths = (
     step: CamelElement,
     integration?: Integration,
 ): DerivedMapperPaths => {
-    const noteConfig = parseMapperConfig((step as any)?.note);
     const description =
         ((step as any)?.description as string | undefined)?.trim()
         || ((step as any)?.id as string | undefined)?.trim()
@@ -206,31 +240,25 @@ export const deriveMapperPaths = (
     const sanitized = sanitizeActivityFileName(description);
     const variableReceive = (step as any)?.variableReceive as string | undefined;
 
-    let targetPath = noteConfig.targetPath?.trim();
-    if (!targetPath) {
-        const inputSchema = getKameletParameterPath(step, "inputSchema");
-        if (inputSchema) {
-            targetPath = inputSchema;
-        } else {
-            const binding = getKameletParameterPath(step, "inputBinding");
-            if (binding) {
-                const xsdFromBinding = binding
-                    .replace(/\/xslt\//gi, "/xsd/")
-                    .replace(/\\xslt\\/gi, "\\xsd\\");
-                if (xsdFromBinding !== binding) {
-                    targetPath = xsdFromBinding;
-                }
-            }
-        }
-        if (!targetPath) {
-            targetPath =
-                getKameletParameterPath(step, "outputSchema", "variableSchema")
-                || (variableReceive ? `xsd/${variableReceive.replace(/-/g, "_")}_input.xsd` : `xsd/${sanitized}_input.xsd`);
+    let targetPath: string | undefined;
+    const inputSchema = getKameletParameterPath(step, "inputSchema");
+    if (inputSchema) {
+        targetPath = inputSchema;
+    } else {
+        const binding = getKameletParameterPath(step, "inputBinding");
+        if (binding) {
+            targetPath = inputBindingToInputXsdPath(binding);
         }
     }
+    if (!targetPath) {
+        targetPath =
+            getKameletParameterPath(step, "outputSchema", "variableSchema")
+            || (variableReceive ? `xsd/${variableReceive.replace(/-/g, "_")}_input.xsd` : `xsd/${sanitized}_input.xsd`);
+    }
+    targetPath = sanitizeMapperTargetPath(targetPath);
 
-    let sourcePath = noteConfig.sourcePath?.trim();
-    if (!sourcePath && integration && step.uuid) {
+    let sourcePath: string | undefined;
+    if (integration && step.uuid) {
         const upstream = getUpstreamStepSchemas(integration, step.uuid);
         const withSchema = upstream.filter((u) => u.storedPath);
         if (withSchema.length > 0) {
@@ -247,35 +275,24 @@ export const deriveMapperPaths = (
 
     const xsltBindingPath =
         getKameletParameterPath(step, "inputBinding", "xslt", "xsltTemplate", "template", "stylesheet")
-        || noteConfig.xslt
         || `xslt/${sanitized}_input.xslt`;
 
     return { sourcePath, targetPath, xsltBindingPath };
 };
 
 /**
- * @deprecated Do not persist to YAML — buildMapperContext uses deriveMapperPaths at runtime.
- * Kept for backwards compatibility if a step already has an explicit note override.
+ * @deprecated Mapper paths are derived at runtime; strip legacy [karavan-xslt-mapper] notes.
  */
 export const ensureMapperNoteConfig = (
     step: CamelElement,
-    integration?: Integration,
+    _integration?: Integration,
 ): CamelElement | null => {
-    const existing = parseMapperConfig((step as any)?.note);
-    if (existing.sourcePath?.trim() && existing.targetPath?.trim()) {
-        return null;
-    }
-    const derived = deriveMapperPaths(step, integration);
-    const nextNote = serializeMapperConfig((step as any)?.note, {
-        sourcePath: existing.sourcePath?.trim() || derived.sourcePath,
-        targetPath: existing.targetPath?.trim() || derived.targetPath,
-        xslt: existing.xslt,
-    });
-    if (nextNote === (step as any)?.note) {
+    const note = (step as any)?.note as string | undefined;
+    if (!note?.includes(MAPPER_NOTE_PREFIX)) {
         return null;
     }
     const clone = CamelUtil.cloneStep(step) as any;
-    clone.note = nextNote;
+    clone.note = clearMapperNoteMarker(note);
     return clone as CamelElement;
 };
 
@@ -298,14 +315,6 @@ export const applyMapperKameletDefaults = (step: CamelElement, uri?: string): Ca
     }
     if (!coercePropertyScalar(to.parameters.outputSchema)) {
         to.parameters.outputSchema = `file:xsd/${sanitized}_output.xsd`;
-    }
-    const derived = deriveMapperPaths(to);
-    const note = serializeMapperConfig((to as any).note, {
-        sourcePath: derived.sourcePath,
-        targetPath: derived.targetPath,
-    });
-    if (note) {
-        (to as any).note = note;
     }
     return step;
 };

@@ -51,27 +51,95 @@ export class XSLTGenerator {
     additionalNamespaces?: Record<string, string>,
   ): string {
     this.variables.clear();
-    
-    // Collect all namespaces
+
     const namespaces = this.buildNamespaceDeclarations(additionalNamespaces);
-    
+    const params = this.extractXsltParams(connections);
+    const paramDecl = params.length > 0
+      ? `\n${params.map((p) => `  <xsl:param name="${p}" as="document-node()?"/>`).join("\n")}\n`
+      : "";
+    const pfxNs = targetNamespace || "http://www.sk.o2.com/EAI/ResourceMgmt/SimDB/1.0";
+    const pfx2Ns = additionalNamespaces?.pfx2
+      || "http://www.sk.o2.com/EAI/Service/Base";
+
     const xslt = `<?xml version="1.0" encoding="UTF-8"?>
-<xsl:stylesheet version="2.0" 
-                xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
-                ${sourceNamespace ? `xmlns:src="${sourceNamespace}"` : ""}
-                ${targetNamespace ? `xmlns:tgt="${targetNamespace}"` : ""}
-                ${namespaces}>
-  
-  <xsl:output method="xml" indent="yes"/>
-  
+<xsl:stylesheet version="2.0"
+    xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+    xmlns:pfx="${pfxNs}"
+    xmlns:pfx2="${pfx2Ns}"
+    ${sourceNamespace && sourceNamespace !== pfxNs ? `xmlns:src="${sourceNamespace}"` : ""}
+    ${namespaces}>
+  <xsl:output method="xml" indent="yes" omit-xml-declaration="no"/>
+${paramDecl}
   <xsl:template match="/">
-${this.generateVariables(connections, 2)}
-    ${this.generateMappings(connections, targetNodes)}
+${this.generateVariables(connections, 2)}${this.generateMappings(connections, targetNodes)}
   </xsl:template>
-  
+
 </xsl:stylesheet>`;
 
     return xslt;
+  }
+
+  private extractXsltParams(connections: any[]): string[] {
+    const names = new Set<string>();
+    connections.forEach((conn) => {
+      const expr = String(conn.sourcePath ?? conn.transformation?.customXPath ?? "").trim();
+      const match = expr.match(/^\$([A-Za-z][\w-]*)/);
+      if (match) {
+        names.add(match[1]);
+      }
+    });
+    return [...names];
+  }
+
+  private findOutputRoot(targetNodes: IXSDNode[]): IXSDNode | null {
+    if (targetNodes.length === 0) {
+      return null;
+    }
+    const root = targetNodes[0];
+    if (root.name === "TargetSchema" || root.name === "SourceSchema") {
+      return root.children?.[0] ?? null;
+    }
+    return root;
+  }
+
+  /** BW5/TIBCO field-copy pattern: root wrapper + xsl:copy-of per mapped field. */
+  private generateBW5CopyOfMappings(connections: any[], targetNodes: IXSDNode[]): string | null {
+    if (connections.length === 0) {
+      return null;
+    }
+    const root = this.findOutputRoot(targetNodes);
+    if (!root?.name) {
+      return null;
+    }
+    const rootPath = this.normalizePath(root.path);
+    const allDirect = connections.every(
+      (conn) => !conn.transformation || conn.transformation.type === MappingTransformationType.DIRECT,
+    );
+    if (!allDirect) {
+      return null;
+    }
+    const underRoot = connections.every((conn) => {
+      const targetPath = this.normalizePath(conn.targetPath ?? "");
+      return targetPath === rootPath || targetPath.startsWith(`${rootPath}/`);
+    });
+    if (!underRoot) {
+      return null;
+    }
+
+    const indent = "    ";
+    let result = `${indent}<pfx:${root.name}>\n`;
+    const ordered = [...connections].sort((a, b) =>
+      this.normalizePath(a.targetPath ?? "").localeCompare(this.normalizePath(b.targetPath ?? "")),
+    );
+    ordered.forEach((conn) => {
+      const expr = String(conn.sourcePath ?? conn.transformation?.customXPath ?? "").trim();
+      if (!expr) {
+        return;
+      }
+      result += `${indent}  <xsl:copy-of select="${expr}"/>\n`;
+    });
+    result += `${indent}</pfx:${root.name}>\n`;
+    return result;
   }
 
   private buildNamespaceDeclarations(additionalNamespaces?: Record<string, string>): string {
@@ -96,7 +164,11 @@ ${this.generateVariables(connections, 2)}
   }
 
   private generateMappings(connections: any[], targetNodes: IXSDNode[]): string {
-    // Group connections by target path to build nested structure
+    const bw5 = this.generateBW5CopyOfMappings(connections, targetNodes);
+    if (bw5) {
+      return bw5;
+    }
+
     const mappingsByTarget = new Map<string, any[]>();
 
     connections.forEach((conn) => {
@@ -106,13 +178,14 @@ ${this.generateVariables(connections, 2)}
       mappingsByTarget.set(normalizedTargetPath, existing);
     });
 
-    // Build from the first real target node (skip wrapper nodes like "TargetSchema")
-    // If there's only one root node and it's a wrapper, start from its children
     if (targetNodes.length === 1 && targetNodes[0].children && targetNodes[0].children.length > 0) {
-      // Skip the wrapper and start from actual target structure
-      return this.buildTargetStructure(targetNodes[0].children, mappingsByTarget, 2, true);
+      const root = targetNodes[0];
+      const isPlaceholder = root.name === "TargetSchema" || root.name === "SourceSchema";
+      if (isPlaceholder && root.children) {
+        return this.buildTargetStructure(root.children, mappingsByTarget, 2, true);
+      }
     }
-    
+
     return this.buildTargetStructure(targetNodes, mappingsByTarget, 2, true);
   }
 
@@ -165,8 +238,7 @@ ${this.generateVariables(connections, 2)}
     let result = `${indent}<${targetElementName}>\n`;
     
     if (!transformation || transformation.type === MappingTransformationType.DIRECT) {
-      // Simple direct mapping
-      result += `${indent}  <xsl:value-of select="${this.normalizePath(fallbackExpression)}"/>\n`;
+      result += `${indent}  <xsl:value-of select="${fallbackExpression}"/>\n`;
     } else if (transformation.type === MappingTransformationType.CONCAT && transformation.parts) {
       // Concatenation
       result += `${indent}  <xsl:value-of select="concat(${this.buildConcatArgs(transformation.parts)})"/>\n`;
@@ -180,8 +252,7 @@ ${this.generateVariables(connections, 2)}
       // Use a variable
       result += `${indent}  <xsl:value-of select="$${transformation.variableName}"/>\n`;
     } else if (fallbackExpression) {
-      // Keep mapping renderable even when transformation payload is partial.
-      result += `${indent}  <xsl:value-of select="${this.normalizePath(fallbackExpression)}"/>\n`;
+      result += `${indent}  <xsl:value-of select="${fallbackExpression}"/>\n`;
     }
     
     result += `${indent}</${targetElementName}>\n`;

@@ -20,6 +20,7 @@ import { BeanFactoryDefinition } from "@karavan-core/model/CamelDefinition";
 import { Integration, KameletTypes } from "@karavan-core/model/IntegrationDefinition";
 import * as path from "path";
 import { ExtensionContext, FileType, Uri, window, workspace } from "vscode";
+import { resolveStoredPath } from "./propertiesResolver";
 
 export function getRoot(): string | undefined {
     return (workspace.workspaceFolders && (workspace.workspaceFolders.length > 0))
@@ -573,8 +574,13 @@ export const resolveWorkspaceFileReadCandidates = (
         add(normalized);
     }
     if (integrationFullPath) {
-        const besideIntegration = path.join(path.dirname(integrationFullPath), normalized);
-        add(asWorkspaceRelativePath(besideIntegration));
+        const integrationParent = path.dirname(integrationFullPath).replace(/\\/g, "/");
+        const folderBase = integrationParent.split("/").pop() ?? "";
+        let besidePath = normalized;
+        if (folderBase && besidePath.startsWith(`${folderBase}/`)) {
+            besidePath = besidePath.slice(folderBase.length + 1);
+        }
+        add(asWorkspaceRelativePath(path.join(integrationParent, besidePath)));
     }
     // Simple filenames (e.g. order-transform.xslt) live beside the integration; not xsd/foo.xsd at workspace root.
     if (dir && !hasDirPrefix) {
@@ -611,4 +617,69 @@ export async function readWorkspaceRelativeFile(relativePath: string): Promise<s
 
     const bytes = await readFile(normalizedAbsolute);
     return Buffer.from(bytes).toString('utf8');
+}
+
+export async function writeWorkspaceRelativeFile(relativePath: string, content: string): Promise<string> {
+    const rootPath = getRoot();
+    if (!rootPath) {
+        throw new Error('No workspace folder is open.');
+    }
+
+    const normalizedRoot = path.resolve(rootPath);
+    const absolutePath = path.isAbsolute(relativePath)
+        ? path.resolve(relativePath)
+        : path.resolve(normalizedRoot, relativePath);
+    const normalizedAbsolute = path.resolve(absolutePath);
+    if (
+        !normalizedAbsolute.startsWith(normalizedRoot + path.sep) &&
+        normalizedAbsolute !== normalizedRoot
+    ) {
+        throw new Error(`Path is outside the workspace: ${relativePath}`);
+    }
+
+    const uri = Uri.file(normalizedAbsolute);
+    const encoder = new TextEncoder();
+    await workspace.fs.writeFile(uri, encoder.encode(content));
+    return asWorkspaceRelativePath(normalizedAbsolute);
+}
+
+export interface WriteWorkspaceMappedFileResult {
+    cacheKey: string;
+    requestedPath: string;
+}
+
+/** Write content to a workspace file resolved from stored URI / integration-relative paths. */
+export async function writeWorkspaceMappedFile(
+    relativePath: string,
+    content: string,
+    integrationDir?: string,
+    integrationFullPath?: string,
+): Promise<WriteWorkspaceMappedFileResult> {
+    const candidates = resolveWorkspaceFileReadCandidates(relativePath, integrationDir, integrationFullPath);
+    const tryWrite = async (index: number): Promise<WriteWorkspaceMappedFileResult> => {
+        if (index >= candidates.length) {
+            throw new Error(`File not found for write. Tried: ${candidates.join(", ")}`);
+        }
+        const candidate = candidates[index];
+        try {
+            const cacheKey = await writeWorkspaceRelativeFile(candidate, content);
+            return { cacheKey, requestedPath: relativePath };
+        } catch {
+            return tryWrite(index + 1);
+        }
+    };
+
+    const workspaceRoot = getRoot() ?? "";
+    const propertiesSearchDir = integrationFullPath
+        ? path.dirname(integrationFullPath)
+        : workspaceRoot;
+    const searchRoot = propertiesSearchDir || workspaceRoot;
+    if (relativePath.includes("{{") && searchRoot) {
+        const stored = relativePath.startsWith("file:") ? relativePath : `file:${relativePath}`;
+        const absolute = await resolveStoredPath(stored, workspaceRoot || searchRoot, propertiesSearchDir || searchRoot);
+        const cacheKey = await writeWorkspaceRelativeFile(absolute, content);
+        return { cacheKey, requestedPath: relativePath };
+    }
+
+    return tryWrite(0);
 }

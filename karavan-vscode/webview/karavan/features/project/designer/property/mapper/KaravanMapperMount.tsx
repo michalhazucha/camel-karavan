@@ -6,7 +6,7 @@ import { useDesignerStore, useIntegrationStore } from "../../DesignerStore";
 import { isMapperStep } from "./mapperStepUtils";
 import { useWorkspaceStore } from "@/karavan/stores/workspaceStore";
 import { workspaceFileLookupKeys, storedPathForWorkspaceRequest } from "@/karavan/utils/workspaceFileResolver";
-import { requestWorkspaceFile } from "@/karavan/utils/workspaceApi";
+import { requestWorkspaceFile, invalidateWorkspaceFileCache } from "@/karavan/utils/workspaceApi";
 import { createKaravanMapperHost } from "./createKaravanMapperHost";
 import { ensureMapperReactGlobals } from "./ensureMapperReactGlobals";
 import type { KaravanMapperHost } from "@karavan/mapper-core";
@@ -201,7 +201,13 @@ export const KaravanMapperMount = () => {
                 };
                 requestMapperFile(ctx?.targetPath, "target");
                 if (!ctx?.xslt?.trim()) {
-                    requestMapperFile(ctx?.xsltPath, "xslt");
+                    const xsltPath = ctx?.xsltPath;
+                    if (xsltPath) {
+                        invalidateWorkspaceFileCache(
+                            storedPathForWorkspaceRequest(xsltPath) ?? xsltPath,
+                        );
+                    }
+                    requestMapperFile(xsltPath, "xslt");
                 }
                 const seenSourcePaths = new Set<string>();
                 for (const entry of ctx?.sourceVariables ?? []) {

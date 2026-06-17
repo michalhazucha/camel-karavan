@@ -897,9 +897,35 @@ ${elementsXML}
     };
 
     const result = findRecursive(nodes, pathParts);
-    if (!result) {
-      console.log(`No match found for path: "${cleanPath}"`);
+    if (result) {
+      return result;
     }
-    return result;
+
+    if (pathParts.length === 1) {
+      const leafMatches = this.findNodesByLeafName(nodes, pathParts[0]);
+      if (leafMatches.length === 1) {
+        console.log(`Leaf match found: ${leafMatches[0].id} (${leafMatches[0].path})`);
+        return leafMatches[0];
+      }
+    }
+
+    console.log(`No match found for path: "${cleanPath}"`);
+    return null;
+  }
+
+  private findNodesByLeafName(nodes: IXSDNode[], leafName: string): IXSDNode[] {
+    const matches: IXSDNode[] = [];
+    const visit = (current: IXSDNode[]) => {
+      current.forEach((node) => {
+        if (node.name === leafName) {
+          matches.push(node);
+        }
+        if (node.children?.length) {
+          visit(node.children);
+        }
+      });
+    };
+    visit(nodes);
+    return matches;
   }
 }
