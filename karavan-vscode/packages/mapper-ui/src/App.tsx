@@ -1421,14 +1421,11 @@ function App({ host }: AppProps) {
                 </div>
                   </div>
                </TooltipTrigger>
-              <TooltipContent
-                className="bg-background"
-                arrowStyle={{ backgroundColor: connectionHighlight, fill: connectionHighlight }}
-              >
-            <div className="flex flex-col gap-2 text-white">
-         <p className="flex flex-row gap-2"><span className="font-semibold">Source:</span><span>{conn?.sourcePath}</span></p>
-         <p className="flex flex-row gap-2"><span className="font-semibold">Target:</span><span>{conn?.targetPath}</span></p>
-         <p className="flex flex-row gap-2"><span className="font-semibold">Type:</span><span>{conn?.transformation?.type}</span></p>
+              <TooltipContent sideOffset={6} className="max-w-lg">
+            <div className="flex flex-col gap-2">
+         <p className="flex flex-col gap-0.5 sm:flex-row sm:gap-2"><span className="font-semibold shrink-0">Source:</span><span className="break-all">{conn?.sourcePath}</span></p>
+         <p className="flex flex-col gap-0.5 sm:flex-row sm:gap-2"><span className="font-semibold shrink-0">Target:</span><span className="break-all">{conn?.targetPath}</span></p>
+         <p className="flex flex-col gap-0.5 sm:flex-row sm:gap-2"><span className="font-semibold shrink-0">Type:</span><span>{conn?.transformation?.type ?? "direct"}</span></p>
   </div>
        </TooltipContent>
      </Tooltip>
