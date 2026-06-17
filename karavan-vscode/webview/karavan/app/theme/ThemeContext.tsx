@@ -15,6 +15,13 @@
  * limitations under the License.
  */
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import {
+    applyPatternflyTheme,
+    isThemeMessage,
+    isVsCodeDarkBody,
+    resolveVsCodeThemeDark,
+    watchVsCodeBodyTheme,
+} from '@/karavan/utils/vscodeTheme';
 
 interface ThemeContextType {
     isDark: boolean;
@@ -23,14 +30,30 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [isDark, setIsDark] = useState(false);
+    const [isDark, setIsDark] = useState(isVsCodeDarkBody);
 
     useEffect(() => {
-        const dark = document.body.className.includes('vscode-dark');
-        setIsDark(dark);
-        if (dark) {
-            document.documentElement.classList.add('pf-v6-theme-dark');
-        }
+        const applyTheme = (message?: { value?: number; isDark?: boolean }) => {
+            const dark = resolveVsCodeThemeDark(message);
+            setIsDark(dark);
+            applyPatternflyTheme(dark);
+        };
+
+        applyTheme();
+
+        const onMessage = (event: MessageEvent) => {
+            if (isThemeMessage(event.data)) {
+                applyTheme(event.data);
+            }
+        };
+
+        window.addEventListener('message', onMessage);
+        const stopWatchingBody = watchVsCodeBodyTheme(() => applyTheme());
+
+        return () => {
+            window.removeEventListener('message', onMessage);
+            stopWatchingBody();
+        };
     }, []);
 
     return (

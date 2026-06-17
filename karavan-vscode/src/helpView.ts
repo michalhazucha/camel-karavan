@@ -17,6 +17,7 @@
 import * as vscode from "vscode";
 import * as utils from "./utils";
 import {getWebviewContent} from "./webviewContent";
+import { bindThemedPanel } from "./webviewTheme";
 
 const KARAVAN_PANELS: Map<string, vscode.WebviewPanel> = new Map<string, vscode.WebviewPanel>();
 
@@ -58,6 +59,7 @@ export class HelpView implements vscode.TreeDataProvider<HelpItem> {
 				}
 			);
 			panel.webview.html = getWebviewContent(this.context, panel.webview);
+			bindThemedPanel(panel, this.context);
 			panel.iconPath = vscode.Uri.joinPath(
 				this.context.extensionUri,
 				"icons/karavan.svg"

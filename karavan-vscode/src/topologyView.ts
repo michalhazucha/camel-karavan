@@ -19,6 +19,7 @@ import * as utils from "./utils";
 import * as path from "path";
 import { getWebviewContent } from "./webviewContent";
 import { WebviewPanelOnDidChangeViewStateEvent } from "vscode";
+import { bindThemedPanel } from "./webviewTheme";
 
 const page = 'topology';
 
@@ -46,6 +47,7 @@ export class TopologyView {
 				}
 			);
 			panel.webview.html = getWebviewContent(this.context, panel.webview);
+			bindThemedPanel(panel, this.context);
 			panel.iconPath = vscode.Uri.joinPath(
 				this.context.extensionUri,
 				"icons/karavan.svg"

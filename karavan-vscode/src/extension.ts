@@ -25,10 +25,13 @@ import { inputFileName, OpenApiItem, OpenApiView, selectFileName } from "./opena
 import { TopologyView } from './topologyView';
 import * as utils from "./utils";
 import { XsltMapperView } from "./xsltMapperView";
+import { activateWebviewThemeSync } from "./webviewTheme";
 
 const KARAVAN_LOADED = "karavan:loaded";
 
 export function activate(context: ExtensionContext) {
+
+    activateWebviewThemeSync(context);
 
     const rootPath = (workspace.workspaceFolders && (workspace.workspaceFolders.length > 0))
         ? workspace.workspaceFolders[0].uri.fsPath : undefined;

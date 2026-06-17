@@ -246,7 +246,7 @@ export function TransformationDialog({
   const hardcodedValueSetter =(e:ChangeEvent<HTMLInputElement>) =>{ setHardcodedValue(e.target.value)}
   return (
     <Dialog open={open} onOpenChange={onOpenChange} >
-      <DialogContent className="dark max-w-2xl max-h-[90vh] overflow-y-auto border-border bg-card text-card-foreground">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto border-border bg-card text-card-foreground">
         <DialogHeader className="space-y-2">
           <DialogTitle>Configure Transformation</DialogTitle>
           <DialogDescription className="space-y-1 text-muted-foreground">

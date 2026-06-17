@@ -20,6 +20,7 @@ import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 import { openXsltEditorWithLiveSync } from "./xsltEditorLiveSync";
+import { bindThemedPanel, bindThemedWebviewView } from "./webviewTheme";
 
 const page = "xslt-mapper";
 const KARAVAN_PANELS: Map<string, vscode.WebviewPanel> = new Map<string, vscode.WebviewPanel>();
@@ -279,7 +280,7 @@ export class XsltMapperView {
         const cspSource = webview.cspSource;
 
         return `<!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${cspSource} 'unsafe-inline'; script-src ${cspSource}; font-src ${cspSource};">
@@ -292,7 +293,7 @@ export class XsltMapperView {
   </style>
 </head>
 <body>
-  <div id="root" class="karavan-mapper-root dark"></div>
+  <div id="root" class="karavan-mapper-root"></div>
   <script src="${jsUri}"></script>
 </body>
 </html>`;
@@ -351,6 +352,7 @@ export class XsltMapperView {
     }
 
     private configureSelectionPanelWebview(webviewView: vscode.WebviewView): void {
+        bindThemedWebviewView(webviewView, this.context);
         const mapperDir = this.getExtensionMapperDir();
         webviewView.webview.options = {
             enableScripts: true,
@@ -397,6 +399,7 @@ export class XsltMapperView {
                 mode: "full",
                 role: "primary",
             });
+            bindThemedPanel(panel, this.context);
             panel.iconPath = vscode.Uri.joinPath(this.context.extensionUri, "icons/karavan.svg");
 
             this.bindMapperPanelLifecycle(panel);

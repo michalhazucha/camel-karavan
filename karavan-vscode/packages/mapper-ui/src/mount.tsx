@@ -3,11 +3,13 @@ import { createRoot, type Root } from "react-dom/client";
 import App from "./App";
 import "./index.css";
 import type { KaravanMapperHost } from "./karavan-host";
+import { applyMapperDarkClass, isVsCodeDarkBody } from "./lib/vscode-theme";
 
 let root: Root | null = null;
 
 export const mountKaravanMapper = (container: HTMLElement, host?: KaravanMapperHost): void => {
-    container.classList.add("karavan-mapper-root", "dark");
+    container.classList.add("karavan-mapper-root");
+    applyMapperDarkClass(isVsCodeDarkBody());
     root?.unmount();
     root = createRoot(container);
     root.render(

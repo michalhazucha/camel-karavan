@@ -15,6 +15,13 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./comp
 import type { KaravanMapperContext, KaravanMapperHost, KaravanSourceVariable } from "./karavan-host";
 import { MappedNodeIDs, ViewMode } from "./lib/constants";
 import { connectionColors } from "./lib/variables";
+import {
+    applyMapperDarkClass,
+    isThemeMessage,
+    isVsCodeDarkBody,
+    resolveVsCodeThemeDark,
+    watchVsCodeBodyTheme,
+} from "./lib/vscode-theme";
 import { getVsCodeApi } from "./vscode-api";
 
 declare global {
@@ -219,7 +226,7 @@ function App({ host }: AppProps) {
   const [transformationDialogOpen, setTransformationDialogOpen] = useState(false)
   const [editingConnection, setEditingConnection] = useState<IMappingConnection | null>(null)
   const [highlightedConnectionId, setHighlightedConnectionId] = useState<string | null>(null)
-  const [themeDark, setThemeDark] = useState<boolean>(false)
+  const [themeDark, setThemeDark] = useState<boolean>(() => isVsCodeDarkBody())
   const [xsltMappings, setXsltMappings] = useState<Array<{
     sourcePath: string
     targetPath: string
@@ -598,15 +605,36 @@ function App({ host }: AppProps) {
     }
   };
 
-  //gettheme and handle XSLT updates
+  // Sync mapper theme with VS Code light/dark
+  useEffect(() => {
+    const applyTheme = (message?: { value?: number; isDark?: boolean }) => {
+      const isDark = resolveVsCodeThemeDark(message);
+      setThemeDark(isDark);
+      applyMapperDarkClass(isDark);
+    };
+
+    applyTheme();
+
+    const onMessage = (event: MessageEvent) => {
+      if (isThemeMessage(event.data)) {
+        applyTheme(event.data);
+      }
+    };
+
+    window.addEventListener("message", onMessage);
+    const stopWatchingBody = watchVsCodeBodyTheme(() => applyTheme());
+
+    return () => {
+      window.removeEventListener("message", onMessage);
+      stopWatchingBody();
+    };
+  }, []);
+
+  // Handle XSLT updates and mapper selection sync
   useEffect(() => {
     const handler = (event: MessageEvent) => {
-      if (event.data?.type === "theme") {
-        const isDark = event.data.value === 2
-        setThemeDark(isDark)
-        document.querySelectorAll(".karavan-mapper-root").forEach((el) => {
-          el.classList.toggle("dark", isDark)
-        })
+      if (isThemeMessage(event.data)) {
+        return;
       } else if (event.data?.type === "xsltUpdated" || event.data?.command === "xsltUpdated") {
         const updatedXSLT = event.data.content;
         if (updatedXSLT?.trim()) {

@@ -26,6 +26,7 @@ import * as utils from "./utils";
 import { getWebviewContent } from "./webviewContent";
 import { getEmbeddedMapperHtml, resolveXsltMapperBuildPath, XsltMapperView } from "./xsltMapperView";
 import { openXsltEditorWithLiveSync } from "./xsltEditorLiveSync";
+import { bindThemedPanel } from "./webviewTheme";
 
 const KARAVAN_LOADED = "karavan:loaded";
 const KARAVAN_PANELS: Map<string, WebviewPanel> = new Map<string, WebviewPanel>();
@@ -126,6 +127,7 @@ export class DesignerView {
                 }
             );
             panel.webview.html = getWebviewContent(this.context, panel.webview);
+            bindThemedPanel(panel, this.context);
             panel.iconPath = Uri.joinPath(
                 this.context.extensionUri,
                 "icons/karavan.svg"
