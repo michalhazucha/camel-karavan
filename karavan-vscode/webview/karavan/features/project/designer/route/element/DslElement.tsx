@@ -14,17 +14,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import React, {CSSProperties, useState} from 'react';
+import { CamelDefinitionApiExt, ChildElement } from "@karavan-core/api/CamelDefinitionApiExt";
+import { CamelDisplayUtil } from "@karavan-core/api/CamelDisplayUtil";
+import { CamelElement } from "@karavan-core/model/IntegrationDefinition";
+import React, { CSSProperties, useState } from 'react';
+import { shallow } from "zustand/shallow";
+import { useDesignerStore, useIntegrationStore } from "../../DesignerStore";
+import { AddElementIcon } from "../../utils/ElementIcons";
+import { EventBus } from "../../utils/EventBus";
+import { useRouteDesignerHook } from "../useRouteDesignerHook";
 import './DslElement.css';
-import {CamelElement} from "@karavan-core/model/IntegrationDefinition";
-import {EventBus} from "../../utils/EventBus";
-import {CamelDefinitionApiExt, ChildElement} from "@karavan-core/api/CamelDefinitionApiExt";
-import {CamelDisplayUtil} from "@karavan-core/api/CamelDisplayUtil";
-import {useDesignerStore, useIntegrationStore} from "../../DesignerStore";
-import {shallow} from "zustand/shallow";
-import {useRouteDesignerHook} from "../useRouteDesignerHook";
-import {AddElementIcon} from "../../utils/ElementIcons";
-import {DslElementHeader} from "./DslElementHeader";
+import { DslElementHeader } from "./DslElementHeader";
 
 interface Props {
     step: CamelElement,
@@ -159,6 +159,8 @@ export function DslElement(props: Props) {
         const style: CSSProperties = {
             borderColor: "var(--step-border-color)",
             borderWidth: "1px",
+            // Keep child wrappers borderless; mapper bundle preflight can otherwise force global solid borders.
+            borderStyle: "none",
             borderRadius: "16px",
             display: isHorizontal() || child.name !== 'steps' ? "flex" : "block",
             flexDirection: "row",

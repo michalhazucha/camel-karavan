@@ -14,22 +14,22 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import React, {CSSProperties, ReactElement, useCallback, useMemo, useRef} from 'react';
-import {Content, Tooltip,} from '@patternfly/react-core';
 import '@features/project/designer/karavan.css';
+import { CamelDefinitionApiExt, ChildElement } from "@karavan-core/api/CamelDefinitionApiExt";
+import { CamelDisplayUtil } from "@karavan-core/api/CamelDisplayUtil";
+import { CamelUtil } from "@karavan-core/api/CamelUtil";
+import { RouteConfigurationDefinition } from "@karavan-core/model/CamelDefinition";
+import { CamelElement } from "@karavan-core/model/IntegrationDefinition";
+import { Content, Tooltip, } from '@patternfly/react-core';
+import React, { CSSProperties, ReactElement, useCallback, useMemo, useRef } from 'react';
+import { shallow } from "zustand/shallow";
+import { useDesignerStore, useIntegrationStore } from "../../DesignerStore";
+import { AutoStartupFalseIcon, ErrorHandlerIcon } from "../../icons/OtherIcons";
+import { usePropertiesHook } from "../../property/usePropertiesHook";
+import { CamelUi } from "../../utils/CamelUi";
+import { AddElementIcon, CopyElementIcon, DeleteElementIcon, DisableStepIcon, EnableStepIcon, InsertElementIcon } from "../../utils/ElementIcons";
+import { useRouteDesignerHook } from "../useRouteDesignerHook";
 import './DslElement.css';
-import {CamelElement} from "@karavan-core/model/IntegrationDefinition";
-import {CamelUi} from "../../utils/CamelUi";
-import {CamelDefinitionApiExt, ChildElement} from "@karavan-core/api/CamelDefinitionApiExt";
-import {CamelUtil} from "@karavan-core/api/CamelUtil";
-import {CamelDisplayUtil} from "@karavan-core/api/CamelDisplayUtil";
-import {useDesignerStore, useIntegrationStore} from "../../DesignerStore";
-import {shallow} from "zustand/shallow";
-import {useRouteDesignerHook} from "../useRouteDesignerHook";
-import {AddElementIcon, CopyElementIcon, DeleteElementIcon, DisableStepIcon, EnableStepIcon, InsertElementIcon} from "../../utils/ElementIcons";
-import {RouteConfigurationDefinition} from "@karavan-core/model/CamelDefinition";
-import {AutoStartupFalseIcon, ErrorHandlerIcon} from "../../icons/OtherIcons";
-import {usePropertiesHook} from "../../property/usePropertiesHook";
 
 interface Props {
     headerRef?: React.Ref<HTMLDivElement>;
@@ -147,6 +147,7 @@ export function DslElementHeader(props: Props) {
             fontWeight: isElementSelected() ? "bold" : "normal",
             borderWidth: getBorderWidth(),
             borderColor: getBorderColor(),
+            borderStyle: "none",
         };
         return style;
     }
